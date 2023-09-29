@@ -1,23 +1,18 @@
-'''
-Prompts are going to be a combination of a, b, and c, where a = [Standard, or Batch: "Prompt model to expect batched input of queries in particular format and prompt model to output queries in a particular format"], and b = ["End-to-end": (i.e., directly prompt the LLM to output the answers without intermediate steps, "CoT": "lets think step by step. output sequential logic" , "Program": "generate programs
-to answer the question"], and c = ["Zero-Shot", "Few-Shot", "One-Shot"]
-'''
-
 class Prompt:
     # Class variables for default templates
     default_input_types = {
-        "Standard": "",  # Standard doesn't require any special instruction
+        "Standard": "",
         "Batch": "You can answer questions. I will give you a few batches of exemplars in format Q[idx]:question, A[idx]:answer."
     }
 
     default_reasoning_types = {
-        "End-to-end": "",  # End-to-end doesn't require any special instruction
+        "End-to-end": "",
         "CoT": "Let's think step by step. Output sequential logic.",
         "Program": "Generate programs to answer the question."
     }
 
     default_shot_types = {
-        "Zero-Shot": "",  # Zero-Shot doesn't require any special instruction
+        "Zero-Shot": "",
         "Few-Shot": "Consider the following examples and maintain their formatting.",
         "One-Shot": "Consider the following example and maintain its formatting."
     }
@@ -26,26 +21,22 @@ class Prompt:
         self.input_type = input_type
         self.reasoning_type = reasoning_type
         self.shot_type = shot_type
-        self.template = f"{self.default_input_types[input_type]}\n{self.default_reasoning_types[reasoning_type]}\n{self.default_shot_types[shot_type]}"
-        self.print_template = self.template  # Initialize print_template with the default template
+        self.update_template()
+
+    def update_template(self):
+        self.template = f"{Prompt.default_input_types[self.input_type]}\n{Prompt.default_reasoning_types[self.reasoning_type]}\n{Prompt.default_shot_types[self.shot_type]}\n{{data_examples}}"
 
     def set_template_part(self, category, value):
-        # Replace a specific part of the template
         if category == "input_type":
-            self.template = self.template.replace(self.default_input_types[self.input_type], value)
-            self.default_input_types[self.input_type] = value  # Update the default
+            Prompt.default_input_types[self.input_type] = value
         elif category == "reasoning_type":
-            self.template = self.template.replace(self.default_reasoning_types[self.reasoning_type], value)
-            self.default_reasoning_types[self.reasoning_type] = value  # Update the default
+            Prompt.default_reasoning_types[self.reasoning_type] = value
         elif category == "shot_type":
-            self.template = self.template.replace(self.default_shot_types[self.shot_type], value)
-            self.default_shot_types[self.shot_type] = value  # Update the default
-        self.print_template = self.template  # Update print_template
+            Prompt.default_shot_types[self.shot_type] = value
+        self.update_template()
 
     def fill_in(self, data_examples):
-        filled_prompt = self.template
-        for key, value in data_examples.items():
-            filled_prompt = filled_prompt.replace(f"{{{key}}}", value)
+        filled_prompt = self.template.format(data_examples=data_examples)
         return filled_prompt
 
 # Example usage
@@ -56,14 +47,19 @@ print("Initial Template:", p.template)
 p.set_template_part("reasoning_type", "Think sequentially.")
 print("Modified Template:", p.template)
 
+# Create a new instance with the same parameters
+p2 = Prompt(input_type="Batch", reasoning_type="CoT", shot_type="Few-Shot")
+print("New Instance Template:", p2.template)
+
 data_examples = {
     "question": "What is 2 + 2?",
     "answer": "4"
-    # Add more data examples here
 }
 
-filled_prompt = p.fill_in(data_examples)
+filled_prompt = p.fill_in(str(data_examples))
 print("Filled Prompt:", filled_prompt)
+
+
 
 
 gsm8k_BatchPrompt_Original_prompt = '''
