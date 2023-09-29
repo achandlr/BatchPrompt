@@ -1,63 +1,176 @@
-class Prompt:
-    # Class variables for default templates
-    default_input_types = {
-        "Standard": "",
-        "Batch": "You can answer questions. I will give you a few batches of exemplars in format Q[idx]:question, A[idx]:answer."
-    }
+
+from langchain.prompts.example_selector import SemanticSimilarityExampleSelector
+from langchain.vectorstores import Chroma
+from langchain.embeddings import HuggingFaceEmbeddings
+from langchain.prompts.prompt import PromptTemplate as LangchainPromptTemplate
+from langchain.prompts import FewShotPromptTemplate
+
+class FlexiblePromptTemplate:
+    # TODO: Create high quality examples for few-shot
+    # default_standard_examples = [
+    #     {"claim": "The Earth is flat", "context": "Multiple scientific studies confirm that the Earth is an oblate spheroid.", "output": "0"},
+    #     {"claim": "Water boils at 100 degrees Celsius at sea level", "context": "The boiling point of water is generally accepted to be 100 degrees Celsius at 1 atmosphere, which is sea level.", "output": "1"},
+    #     {"claim": "Light travels faster than sound", "context": "The speed of light in a vacuum is approximately 299,792 kilometers per second, far exceeding the speed of sound in air, which is around 343 meters per second.", "output": "1"}
+    # ]
+
+    # default_CoT_examples = [
+    #     {"claim": "The Earth is flat", "context": "Multiple scientific studies confirm that the Earth is an oblate spheroid.", "output": "Let's think step by step. The claim 'The Earth is flat' is directly contradicted by the context 'Multiple scientific studies confirm that the Earth is an oblate spheroid.' Therefore, the claim is completely not supported, so the score is 0."},
+    #     {"claim": "Water boils at 100 degrees Celsius at sea level", "context": "The boiling point of water is generally accepted to be 100 degrees Celsius at 1 atmosphere, which is sea level.", "output": "Let's think step by step. The claim 'Water boils at 100 degrees Celsisus at sea level' is directly supported by the context 'The boiling point of water is generally accepted to be 100 degrees Celsius at 1 atmosphere, which is sea level.' Therefore, the claim is completely supported, so the score is 1."},
+    #     {"claim": "Light travels faster than sound", "context": "The speed of light in a vacuum is approximately 299,792 kilometers per second, far exceeding the speed of sound in air, which is around 343 meters per second.", "output": "Let's think step by step. The claim states that 'Light travels faster than sound'. The context states that 'The speed of light in a vacuum is approximately 299,792 kilometers per second. The speed of sound in air is around 343 meters per second. Converting to the same units, the speed of air is .343 kilometers per second. Since, 299,792 kilometers per second is much faster than .343 kilometers per second, the claim is directly supported. Therefore, the score is 1."}
+    # ]
+    default_task_description = ""
 
     default_reasoning_types = {
         "End-to-end": "",
-        "CoT": "Let's think step by step. Output sequential logic.",
-        "Program": "Generate programs to answer the question."
+        "CoT": "Let's think step by step. Output sequential logic."
     }
-
+        # Class variable for default shot types
     default_shot_types = {
         "Zero-Shot": "",
         "Few-Shot": "Consider the following examples and maintain their formatting.",
         "One-Shot": "Consider the following example and maintain its formatting."
     }
+    default_example_formats = {
+        "End-to-end" : "Question: {question}\Output: {output}",
+        "CoT":  "Question: {question}\Output: {output}"
+    }
 
-    def __init__(self, input_type="Standard", reasoning_type="End-to-end", shot_type="Zero-Shot"):
-        self.input_type = input_type
+    default_num_shots = {
+        "Few-Shot" : 3,
+        "One-Shot" : 1,
+        "Zero-Shot" : 0
+    }
+
+    def __init__(self, examples, task_description, example_format, num_shots = None, reasoning_type="End-to-end", shot_type="Zero-Shot"):
+        self.examples = examples
+        self.task_description = task_description
         self.reasoning_type = reasoning_type
+        self.reasoning_type_description = self.default_reasoning_types[reasoning_type]
         self.shot_type = shot_type
-        self.update_template()
+        self.shot_type_description = self.default_shot_types[shot_type]
+        self.task_description_with_reasoning_type = f"{self.task_description}\n{self.reasoning_type_description}\n{self.shot_type_description}"
+        if example_format is None:
+            self.example_format = self.default_example_formats[reasoning_type]
+        else:
+            self.example_format = example_format
+        if num_shots is None:
+            self.num_shots = self.default_num_shots[shot_type]
+        else:
+            self.num_shots = num_shots
+        if self.shot_type == "Few-Shot":
+            self.init_langchain()
 
-    def update_template(self):
-        self.template = f"{Prompt.default_input_types[self.input_type]}\n{Prompt.default_reasoning_types[self.reasoning_type]}\n{Prompt.default_shot_types[self.shot_type]}\n{{data_examples}}"
+    def init_langchain(self):
+        # Initialize Langchain components
+        embeddings = HuggingFaceEmbeddings()
+        to_vectorize = []
+        for example in self.examples:
+            question = example["question"]
+            output = example["output"]
+            example_in_format = self.example_format.format(question=question, output=output)
+            to_vectorize.append(example_in_format) 
 
-    def set_template_part(self, category, value):
-        if category == "input_type":
-            Prompt.default_input_types[self.input_type] = value
-        elif category == "reasoning_type":
-            Prompt.default_reasoning_types[self.reasoning_type] = value
-        elif category == "shot_type":
-            Prompt.default_shot_types[self.shot_type] = value
-        self.update_template()
+        # vectorstore = Chroma.from_texts(to_vectorize, embeddings, metadatas=self.examples)
+        # example_selector = SemanticSimilarityExampleSelector(vectorstore=vectorstore, k=self.num_shots)
 
-    def fill_in(self, data_examples):
-        filled_prompt = self.template.format(data_examples=data_examples)
+        example_selector = SemanticSimilarityExampleSelector.from_examples(
+        # The list of examples available to select from.
+        self.examples, 
+        # The embedding class used to produce embeddings which are used to measure semantic similarity.
+        HuggingFaceEmbeddings(), 
+        # The VectorStore class that is used to store the embeddings and do a similarity search over.
+        Chroma, 
+        # The number of examples to produce.
+        k=self.num_shots
+        )
+        
+        example_prompt = LangchainPromptTemplate(
+            input_variables=["question", "output"],
+            template=self.example_format)
+
+        self.few_shot_prompt = FewShotPromptTemplate(
+            example_selector=example_selector,
+            # example_prompt=example_prompt,
+            prefix=self.task_description_with_reasoning_type,
+            # suffix="", 
+            # input_variables=["claim", "context"]  # These variables are used in the prefix and suffix
+            # examples=self.examples, 
+            example_prompt=example_prompt, 
+            suffix="Question {question}\nOutput: ", 
+            input_variables=["question"]
+        )
+        return
+    
+    def fill_in(self, question):
+
+        if self.shot_type == "Few-Shot" or self.shot_type == "One-Shot":
+            filled_prompt = self.few_shot_prompt.format(question = question)
+        else:
+            filled_prompt = f"{self.task_description_with_reasoning_type}\nQuestion: {question}\nOutput: "
         return filled_prompt
 
-# Example usage
-p = Prompt(input_type="Batch", reasoning_type="CoT", shot_type="Few-Shot")
-print("Initial Template:", p.template)
 
-# Modify a specific part of the template
-p.set_template_part("reasoning_type", "Think sequentially.")
-print("Modified Template:", p.template)
 
-# Create a new instance with the same parameters
-p2 = Prompt(input_type="Batch", reasoning_type="CoT", shot_type="Few-Shot")
-print("New Instance Template:", p2.template)
+# class Prompt:
+#     # Class variables for default templates
+#     default_input_types = {
+#         "Standard": "",
+#         "Batch": "You can answer questions. I will give you a few batches of exemplars in format Q[idx]:question, A[idx]:answer."
+#     }
 
-data_examples = {
-    "question": "What is 2 + 2?",
-    "answer": "4"
-}
+#     default_reasoning_types = {
+#         "End-to-end": "",
+#         "CoT": "Let's think step by step. Output sequential logic.",
+#         "Program": "Generate programs to answer the question."
+#     }
 
-filled_prompt = p.fill_in(str(data_examples))
-print("Filled Prompt:", filled_prompt)
+#     default_shot_types = {
+#         "Zero-Shot": "",
+#         "Few-Shot": "Consider the following examples and maintain their formatting.",
+#         "One-Shot": "Consider the following example and maintain its formatting."
+#     }
+
+#     def __init__(self, input_type="Standard", reasoning_type="End-to-end", shot_type="Zero-Shot"):
+#         self.input_type = input_type
+#         self.reasoning_type = reasoning_type
+#         self.shot_type = shot_type
+#         self.update_template()
+
+#     def update_template(self):
+#         self.template = f"{Prompt.default_input_types[self.input_type]}\n{Prompt.default_reasoning_types[self.reasoning_type]}\n{Prompt.default_shot_types[self.shot_type]}\n{{data_examples}}"
+
+#     def set_template_part(self, category, value):
+#         if category == "input_type":
+#             Prompt.default_input_types[self.input_type] = value
+#         elif category == "reasoning_type":
+#             Prompt.default_reasoning_types[self.reasoning_type] = value
+#         elif category == "shot_type":
+#             Prompt.default_shot_types[self.shot_type] = value
+#         self.update_template()
+
+#     def fill_in(self, data_examples):
+#         filled_prompt = self.template.format(data_examples=data_examples)
+#         return filled_prompt
+
+# # Example usage
+# p = Prompt(input_type="Batch", reasoning_type="CoT", shot_type="Few-Shot")
+# print("Initial Template:", p.template)
+
+# # Modify a specific part of the template
+# p.set_template_part("reasoning_type", "Think sequentially.")
+# print("Modified Template:", p.template)
+
+# # Create a new instance with the same parameters
+# p2 = Prompt(input_type="Batch", reasoning_type="CoT", shot_type="Few-Shot")
+# print("New Instance Template:", p2.template)
+
+# data_examples = {
+#     "question": "What is 2 + 2?",
+#     "answer": "4"
+# }
+
+# filled_prompt = p.fill_in(str(data_examples))
+# print("Filled Prompt:", filled_prompt)
 
 
 
