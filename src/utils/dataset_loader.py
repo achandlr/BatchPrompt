@@ -16,6 +16,10 @@ def pickle_dataset(dataset, dataset_name):
         pickle.dump(dataset, f)
     return 
 
+def load_pickle(file_path):
+    with open(file_path, 'rb') as file:
+        data = pickle.load(file)
+    return data
 # Load the gsm8k dataset
 # TODO: Confirm all below
 gsm8k = load_dataset("gsm8k", "main")  # well organized, easy to use
@@ -27,12 +31,12 @@ rte = load_dataset("glue", "rte") # well organized, easy to use, ignore test bec
 mnli = load_dataset("glue", "mnli")
 
 pickle_dataset(gsm8k, "gsm8k")
-pickle_dataset(gsm8k, "gsm-hard")
-pickle_dataset(gsm8k, "commonsense_qa")
-pickle_dataset(gsm8k, "openai_humaneval")
-pickle_dataset(gsm8k, "mbpp")
-pickle_dataset(gsm8k, "rte")
-pickle_dataset(gsm8k, "mnli")
+pickle_dataset(gsm_hard, "gsm-hard")
+pickle_dataset(commensense_qa, "commonsense_qa")
+pickle_dataset(human_eval, "openai_humaneval")
+pickle_dataset(mbpp, "mbpp")
+pickle_dataset(rte, "rte")
+pickle_dataset(mnli, "mnli")
 print("DONE")
 # mnli = rte = load_dataset("glue", "mnli_matched")
 # mnli = rte = load_dataset("glue", "mnli_mismatched")
