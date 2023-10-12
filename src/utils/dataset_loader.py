@@ -23,7 +23,7 @@ gsm_hard = load_dataset("reasoning-machines/gsm-hard") # well organized, easy to
 commensense_qa = load_dataset("commonsense_qa") # train and validation hold gold truth labels, test does not
 human_eval = load_dataset("openai_humaneval") # test cases in human_eval["test"]["test"], but hard to parse and would be fair bit of work
 mbpp = load_dataset("mbpp") # test cases well organized as list for each code generation in mbpp["train"]['test_list']
-rte = load_dataset("glue", "rte") # well organized, easy to use
+rte = load_dataset("glue", "rte") # well organized, easy to use, ignore test because no ground truth
 mnli = load_dataset("glue", "mnli")
 
 pickle_dataset(gsm8k, "gsm8k")
