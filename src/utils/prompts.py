@@ -123,6 +123,7 @@ class FlexiblePromptTemplate:
                     # Check if there is a complete set of 3 elements
                     if i + 2 < len(few_shot_selected_examples_split):
                         # Append the question and answer to their respective lists
+                        # TODO: modify logic so that examples are new for each one (currently can get same examples for each question)
                         few_shot_questions.append(few_shot_selected_examples_split[i])
                         few_shot_answers.append(few_shot_selected_examples_split[i + 1])
                 # questions = few_shot_selected_examples_split[0::2]
@@ -176,21 +177,21 @@ class FlexiblePromptTemplate:
         return batched_prompt
     
 
-# flexible_prompt_template = FlexiblePromptTemplate(
-#     examples=[
-#         {'question': 'What is 2+2?', 'output': '4'},
-#         {'question': 'What is 3+3?', 'output': '6'},
-#         {'question': 'How many elbows does a man have?', 'output': '2'},
-#         {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
-#     ],
-#     task_description='You can solve arithmetic problems. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format',
-#     # example_format='Q: {question}\nA: {output}',
-#     # example_format='{question}\n{output}',
-#     # example_format='{question}\n{output}',
-#     num_shots_per_question=1,
-#     reasoning_type='End-to-end',
-#     shot_type='Few-Shot'
-# )
+flexible_prompt_template = FlexiblePromptTemplate(
+    examples=[
+        {'question': 'What is 2+2?', 'output': '4'},
+        {'question': 'What is 3+3?', 'output': '6'},
+        {'question': 'How many elbows does a man have?', 'output': '2'},
+        {'question': 'Where are elbows?', 'output': 'Elbows are on the arm.'}
+    ],
+    task_description='You can solve arithmetic problems. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format',
+    # example_format='Q: {question}\nA: {output}',
+    # example_format='{question}\n{output}',
+    # example_format='{question}\n{output}',
+    num_shots_per_question=2,
+    reasoning_type='End-to-end',
+    shot_type='Few-Shot'
+)
 
 
 # # Initialize with examples, task description, and other settings
@@ -210,21 +211,21 @@ class FlexiblePromptTemplate:
 #     shot_type='One-Shot'
 # )
 
-flexible_prompt_template = FlexiblePromptTemplate(
-    examples=[
-        {'question': 'What is 2+2?', 'output': '4'},
-        {'question': 'What is 3+3?', 'output': '6'},
-        {'question': 'How many elbows does a man have?', 'output': '2'},
-        {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
-    ],
-    task_description='''# Instruction: Answer all questions in the batch, regardless of their type. For each question, provide a single answer and follow the format: A[index]: answer.\n\n# Questions in Batch to Answer''',
-    # example_format='Q: {question}\nA: {output}',
-    # example_format='{question}\n{output}',
-    # example_format='{question}\n{output}',
-    num_shots_per_question=2,
-    reasoning_type='End-to-end',
-    shot_type='Zero-Shot'
-)
+# flexible_prompt_template = FlexiblePromptTemplate(
+#     examples=[
+#         {'question': 'What is 2+2?', 'output': '4'},
+#         {'question': 'What is 3+3?', 'output': '6'},
+#         {'question': 'How many elbows does a man have?', 'output': '2'},
+#         {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
+#     ],
+#     task_description='''# Instruction: Answer all questions in the batch, regardless of their type. For each question, provide a single answer and follow the format: A[index]: answer.\n\n# Questions in Batch to Answer''',
+#     # example_format='Q: {question}\nA: {output}',
+#     # example_format='{question}\n{output}',
+#     # example_format='{question}\n{output}',
+#     num_shots_per_question=2,
+#     reasoning_type='End-to-end',
+#     shot_type='Zero-Shot'
+# )
 
 
 # Generate a batched prompt with multiple questions
@@ -237,6 +238,16 @@ output = query_model("gpt-3.5-turbo", batched_prompt)
 print(batched_prompt)
 print(output)
 
+'''
+k_total
+k_per_question
+
+Three variables to keep track of.
+Number of batches we include in prompt as example: 1 (This is stupid and we probably don't define)
+Number of total examples in batch. 
+Number of examples per inference questions (assuming this is constant) 
+Number of inference questions: Original paper uses b samples in a batch to inference
+'''
 # from langchain.prompts.example_selector import SemanticSimilarityExampleSelector
 # from langchain.vectorstores import Chroma
 # from langchain.embeddings import HuggingFaceEmbeddings

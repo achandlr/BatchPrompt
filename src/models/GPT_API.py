@@ -7,8 +7,7 @@ def read_api_token(token_path):
         API_TOKEN = f.read().strip()
     return API_TOKEN
     
-
-def query_model(model, prompt):
+def query_model(model, prompt, model_temperature = .2):
     message = [{"role": "user", "content": prompt}]
     # Estimate the number of tokens used
     estimated_tokens = len(prompt.split()) * 3
@@ -21,7 +20,7 @@ def query_model(model, prompt):
             response = openai.ChatCompletion.create(
                 model=model,
                 messages=message,
-                temperature=0.2, # TODO: experiment with temperature
+                temperature=model_temperature, # TODO: experiment with temperature
                 # max_tokens=4000,
                 frequency_penalty=0.0
             )

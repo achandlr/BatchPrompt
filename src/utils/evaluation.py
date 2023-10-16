@@ -114,10 +114,12 @@ mbpp = load_pickle( "data\\imported\\datasets\\pickled\\mbpp")
 # mbpp_test_cases_example = mbpp['train']['test_list'][1]
 
 evaluator = CodeEvaluator()
+# Example Code to run evaluator
 bad_indices = {326}
 for index in range(len(mbpp['train']['code'])):
     if index in bad_indices:
         continue
+    # index = 326
     mbpp_code_example = mbpp['train']['code'][index]
     mbpp_test_cases_example = mbpp['train']['test_list'][index]
     result = evaluator.run_code_and_tests(mbpp_code_example, mbpp_test_cases_example)

@@ -2,12 +2,6 @@
 from datasets import load_dataset
 import pickle
 
-# def load_dataset(dataset_name):
-#     """
-#     Loads the dataset from the HuggingFace Hub
-#     """
-#     return load_dataset(dataset_name)
-
 def pickle_dataset(dataset, dataset_name):
     """
     Pickles the dataset
