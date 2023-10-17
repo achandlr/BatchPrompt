@@ -2,3 +2,4 @@ data/imported/datasets
 build
 BatchPrompt.egg-info
 src/utils/prompts_2.py
+RJHA_TOGETHER_AI_TOKEN.txt
