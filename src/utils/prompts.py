@@ -1,5 +1,5 @@
 from src.models.GPT_API import query_model
-from src.models.GPT_API import set_api_key
+from src.models.GPT_API import set_gpt_api_key
 
 from langchain.prompts.example_selector import SemanticSimilarityExampleSelector
 from langchain.vectorstores import Chroma
@@ -229,14 +229,14 @@ flexible_prompt_template = FlexiblePromptTemplate(
 
 
 # Generate a batched prompt with multiple questions
-batched_prompt = flexible_prompt_template.fill_in(['What is 5+5?', 'How many elbows does a women have?', 'Why are elbows important?'])
-set_api_key("data\\imported\\datasets\\api_token.txt")
+# batched_prompt = flexible_prompt_template.fill_in(['What is 5+5?', 'How many elbows does a women have?', 'Why are elbows important?'])
+# set_api_key("data\\imported\\datasets\\api_token.txt")
 
-output = query_model("gpt-3.5-turbo", batched_prompt)
+# output = query_model("gpt-3.5-turbo", batched_prompt)
 
-# Display the batched prompt
-print(batched_prompt)
-print(output)
+# # Display the batched prompt
+# print(batched_prompt)
+# print(output)
 
 '''
 k_total

@@ -38,5 +38,5 @@ def query_model(model, prompt, model_temperature = .2):
     text_response = response["choices"][0]["message"]["content"]
     return text_response
 
-def set_api_key(api_token_path):
+def set_gpt_api_key(api_token_path):
     openai.api_key = read_api_token(api_token_path)
