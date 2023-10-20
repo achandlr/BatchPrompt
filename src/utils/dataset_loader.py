@@ -298,7 +298,9 @@ def filter_dataset_by_task(dataset, acceptable_tasks={"commonsenseqa", "mnli", "
     return filtered_dataset
 # Load the gsm8k dataset
 # TODO: Confirm all below
-LOAD_PICKLE = True
+LOAD_PICKLE = False
+LOAD_WITH_HUGGINGFACE = False
+LOAD_EXAMPLES = False
 
 if LOAD_PICKLE:
     gsm8k = load_pickle("data//imported//datasets//pickled//gsm8k")
@@ -314,7 +316,7 @@ if LOAD_PICKLE:
     # CoT_examples_desired_tasks_only = filter_dataset_by_task(CoT_examples, acceptable_tasks={"commonsenseqa", "mnli", "rte"})
     # pickle_dataset(CoT_examples_desired_tasks_only, "CoT-Collection-desired-tasks-only")
     CoT_examples_desired_tasks_only = load_pickle("data//imported//datasets//pickled//CoT-Collection-desired-tasks-only")
-else: 
+elif LOAD_WITH_HUGGINGFACE: 
     gsm8k = load_dataset("gsm8k", "main")  # well organized, easy to use
     gsm_hard = load_dataset("reasoning-machines/gsm-hard") # well organized, easy to use
     commonsense_qa = load_dataset("commonsense_qa") # train and validation hold gold truth labels, test does not
@@ -335,21 +337,20 @@ else:
     pickle_dataset(CoT_examples, "CoT-Collection")
     pickle_dataset(CoT_examples_desired_tasks_only, "CoT-Collection-desired-tasks-only")
 
+if LOAD_EXAMPLES:
+    gsm8k_examples = get_few_shot_examples(gsm8k, "gsm8k", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    gsm8k_examples_CoT = get_few_shot_examples(gsm8k, "gsm8k", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
 
-gsm8k_examples = get_few_shot_examples(gsm8k, "gsm8k", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
-gsm8k_examples_CoT = get_few_shot_examples(gsm8k, "gsm8k", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    gsm_hard_examples = get_few_shot_examples(gsm_hard, "gsm_hard", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    gsm_hard_examples_CoT = get_few_shot_examples(gsm_hard, "gsm_hard", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = gsm8k)
 
-gsm_hard_examples = get_few_shot_examples(gsm_hard, "gsm_hard", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
-gsm_hard_examples_CoT = get_few_shot_examples(gsm_hard, "gsm_hard", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = gsm8k)
+    commonsense_qa_examples = get_few_shot_examples(commonsense_qa, "commonsense_qa", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    commonsense_qa_examples_CoT = get_few_shot_examples(commonsense_qa, "commonsense_qa", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
 
-commonsense_qa_examples = get_few_shot_examples(commonsense_qa, "commonsense_qa", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
-commonsense_qa_examples_CoT = get_few_shot_examples(commonsense_qa, "commonsense_qa", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
+    mbpp_examples = get_few_shot_examples(mbpp, "mbpp", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
 
-mbpp_examples = get_few_shot_examples(mbpp, "mbpp", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    rte_examples = get_few_shot_examples(rte, "rte", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    rte_examples_CoT = get_few_shot_examples(rte, "rte", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
 
-# TODO: Not implemented yet
-rte_examples = get_few_shot_examples(rte, "rte", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
-rte_examples_CoT = get_few_shot_examples(rte, "rte", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
-
-mnli_examples = get_few_shot_examples(mnli, "mnli", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
-mnli_examples_CoT = get_few_shot_examples(mnli, "mnli", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
+    mnli_examples = get_few_shot_examples(mnli, "mnli", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    mnli_examples_CoT = get_few_shot_examples(mnli, "mnli", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
