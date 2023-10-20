@@ -296,8 +296,7 @@ def filter_dataset_by_task(dataset, acceptable_tasks={"commonsenseqa", "mnli", "
     filtered_dataset = dataset.filter(lambda example: example['task'] in acceptable_tasks)
 
     return filtered_dataset
-# Load the gsm8k dataset
-# TODO: Confirm all below
+
 LOAD_PICKLE = False
 LOAD_WITH_HUGGINGFACE = False
 LOAD_EXAMPLES = False
