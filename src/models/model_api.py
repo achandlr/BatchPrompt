@@ -1,4 +1,6 @@
 import together
+import openai
+import backoff
 from typing import List, Dict, Any, Tuple, TypedDict, Optional
 
 
@@ -8,7 +10,14 @@ def read_api_token(token_path : str) -> str:
         API_TOKEN = f.read().strip()
     return API_TOKEN
 
-class TogetherAIModel():
+class LanguageModel:
+    def __init__(self):
+        raise NotImplementedError
+
+    def query(self, prompt : str) -> str:
+        raise NotImplementedError
+
+class TogetherAIModel(LanguageModel):
     """ 
     A wrapper class for the Together AI API.
     
@@ -43,6 +52,7 @@ class TogetherAIModel():
     def __repr__(self):
         return f"TogetherAIModel(model_name={self.model_name}, generation_params={self.generation_params})"
 
+    @backoff.on_exception(backoff.expo, Exception, max_tries=10)
     def query(self, prompt : str) -> str:
         response = together.Complete.create(
             prompt = prompt,
@@ -50,7 +60,38 @@ class TogetherAIModel():
             **self.generation_params,
         )
         return response["output"]["choices"][0]["text"]
-
-    def batch_query(self, prompts : List[str]) -> List[str]:
-        return [self.query_model(prompt) for prompt in prompts]
     
+
+class OpenAIModel(LanguageModel):
+    def __init__(
+        self,
+        api_token,
+        model_name,
+        generation_params,
+    ):
+        openai.api_key = api_token
+        self.api_token = api_token
+        self.model_name = model_name
+        self.generation_params = generation_params
+
+    def __repr__(self):
+        return f"OpenAIModel(model_name={self.model_name}, generation_params={self.generation_params})"
+    
+    @backoff.on_exception(backoff.expo, openai.error.RateLimitError, max_tries=10)
+    def query(self, prompt : str) -> str:
+        message = [{"role": "user", "content": prompt}]
+        response = openai.ChatCompletion.create(
+            model=self.model_name,
+            message=message,
+            **self.generation_params,
+        )
+        text_response = response["choices"][0]["message"]["content"]
+        return text_response
+    
+
+if __name__ == "__main__":
+    model = TogetherAIModel(
+        api_token=read_api_token("RJHA_TOGETHER_AI_TOKEN.txt"),
+        model_name="togethercomputer/llama-2-7b",
+        generation_params={}
+    )
