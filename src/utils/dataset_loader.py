@@ -34,6 +34,52 @@ def get_allowed_indices(disallowed_data_indices, total_length):
         return {i for i in range(total_length) if i not in disallowed_data_indices}
 import numpy as np
 
+def extract_function_name(s):
+    # Step 1: Compile Regex Pattern
+    pattern = re.compile(r'\b([a-zA-Z_][a-zA-Z0-9_]*)\s*?\(')
+    
+    # Step 2: Search with Regex
+    match = pattern.search(s)
+    if match:
+        return match.group(1)
+    
+    # Step 3: Fallback Mechanism - String Manipulation
+    try:
+        index_open_paren = s.index('(')
+    except ValueError:
+        return None  # Return None if no opening parenthesis is found
+    
+    # Traverse backward to get the function name
+    function_name = []
+    for i in range(index_open_paren - 1, -1, -1):
+        if s[i].isalnum() or s[i] == '_':
+            function_name.append(s[i])
+        else:
+            break
+    function_name = ''.join(reversed(function_name))
+    
+    return function_name if function_name else None
+
+def filter_steps(disallowed_indices, step_by_step_thinking):
+    # Step 1: Input Validation
+    if disallowed_indices == None:
+        return step_by_step_thinking
+    if not isinstance(disallowed_indices, list) or not isinstance(step_by_step_thinking, list):
+        raise TypeError("Both disallowed_indices and step_by_step_thinking should be lists.")
+    
+    if not step_by_step_thinking:
+        return []
+    
+    # Step 2: Sanitize Disallowed Indices
+    disallowed_indices_set = set(disallowed_indices)
+    disallowed_indices_set = {x for x in disallowed_indices_set if 0 <= x < len(step_by_step_thinking)}
+    
+    # Step 3: Filter Steps
+    filtered_steps = [step for idx, step in enumerate(step_by_step_thinking) if idx not in disallowed_indices_set]
+    
+    # Step 4: Return Result
+    return filtered_steps
+
 def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None):
     
     if dataset_name == "gsm8k":
@@ -139,17 +185,45 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
             return question_with_answer_choices, answers
     elif dataset_name == "mbpp":
         if example_type == "CoT":
-            # TODO: Create our own CoT examples for MBPP
-            raise NotImplementedError()
+            allowed_indices = get_allowed_indices(disallowed_data_indices, len(dataset[data_location]))
+            questions_np = np.array(dataset[data_location]['text'])
+            answers_np = np.array(dataset[data_location]['code'])
+            test_list_np = np.array(dataset[data_location]['test_list'])
+            questions = questions_np[list(allowed_indices)]
+            answers = answers_np[list(allowed_indices)]
+            test_list = test_list_np[list(allowed_indices)]
+            questions_with_function_names = [] 
+            from data.generated.mbpp_CoT import step_by_step_thinking
+            step_by_step_thinking_without_dissalowed_indices = filter_steps(disallowed_data_indices, step_by_step_thinking)
+            output_with_CoT = []
+            for question, test_list, step_by_step, answer in zip(questions, test_list, step_by_step_thinking_without_dissalowed_indices, answers):
+                function_name = extract_function_name(test_list[0])
+                questions_with_function_names.append(f"Python Function Request: {question} The functions name should be {function_name}.")
+                output_with_CoT += [f"Step by Step thinking:\n{step_by_step}\n\nFinal Output:\n{answer}"]
+            # These serves as prompts to generate the step by step thinking. All step by step thinking is verified and modified by a human to correct any errors and ensure propper formatting.
+            # for i in range(len(answers)):
+            #     print(f"Question Number: {i}")
+            #     function_name = extract_function_name(test_list[i][0])
+            #     print(f"Python Function Request: {questions[i]} The functions name should be {function_name}")
+            #     print(f"Coding solution for the Python that we need the associated step by step thinking for. We want our step by step output to lead an LLM to ONLY output the following: {answers[i]}")
+            #     print("Now your task is to write step by step thinking that would lead an LLM to generate the code above. Make sure that your step by step thinking is valid, sequential, informative, and leads to reasoning that would help the model solve the problem above in the same way that the code was generated. Label each step of thinking as Step idx. Start your output with [START OF STEP BY STEP THINKING]:\n and end your output with [END OF STEP BY STEP THINKING]. Only focus on writing step by step solutions, and do not have your step by step solutions lead to the model outputting anything other than the exact code above.")
+            #     print("\n\n")
+            return questions_with_function_names, output_with_CoT
         else:
             allowed_indices = get_allowed_indices(disallowed_data_indices, len(dataset[data_location]))
             questions_np = np.array(dataset[data_location]['text'])
             answers_np = np.array(dataset[data_location]['code'])
             questions = questions_np[list(allowed_indices)]
             answers = answers_np[list(allowed_indices)]
+            test_list_np = np.array(dataset[data_location]['test_list'])
+            test_list = test_list_np[list(allowed_indices)]
+            questions_with_function_names = []
+            for question, test_list in zip(questions, test_list):
+                function_name = extract_function_name(test_list[0])
+                questions_with_function_names.append(f"Python Function Request: {question} The functions name should be {function_name}.")
             # example_questions = [dataset[data_location][i]['text'] for i in allowed_indices]
             # example_answers = [dataset[data_location][i]['code'] for i in allowed_indices]
-            return questions, answers
+            return questions_with_function_names, answers
     # TODO: implement
     elif dataset_name == "rte":
         
@@ -347,6 +421,7 @@ if LOAD_EXAMPLES:
     commonsense_qa_examples_CoT = get_few_shot_examples(commonsense_qa, "commonsense_qa", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
 
     mbpp_examples = get_few_shot_examples(mbpp, "mbpp", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
+    mbpp_examples = get_few_shot_examples(mbpp, "mbpp" ,example_type= "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
 
     rte_examples = get_few_shot_examples(rte, "rte", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
     rte_examples_CoT = get_few_shot_examples(rte, "rte", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = CoT_examples_desired_tasks_only)
