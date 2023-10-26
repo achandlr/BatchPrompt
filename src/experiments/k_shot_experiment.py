@@ -218,10 +218,10 @@ class BatchPromptExperiment:
         pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
 
-        batched_model_outputs = self.batch_query_model(batched_model_inputs)
-        # # save the pickled batched model outputs to file
-        print("Dumping batched model outputs to file...")
-        pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
+        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        # # # save the pickled batched model outputs to file
+        # print("Dumping batched model outputs to file...")
+        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -359,3 +359,4 @@ if __name__ == "__main__":
 
     experiment = BatchPromptExperiment(config)
     experiment.execute()
+    print("DONE")
