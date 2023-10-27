@@ -439,16 +439,23 @@ if LOAD_EXAMPLES:
 
 if __name__ == "__main__":
     from src.utils.evaluation import Evaluation
-    from src.models.GPT_API import query_model
+    from src.models.GPT_API import query_model, set_api_key
     from src.utils.prompts import FlexiblePromptTemplate
     from evaluation import extract_answers_batch
     evaluator = Evaluation()
 
-    ground_truth_answers = [x[1] for x in gsm8k_examples]
     preds = []
     stats = []
+    DEBUG = True
+    set_api_key(r"data/imported/api_token.txt")
     for i, dataset in enumerate([gsm8k_examples, gsm_hard_examples, commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
-        dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0], dataset[1])]
+        
+        if DEBUG:
+            dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0][0:10], dataset[1][0:10])]
+            ground_truth_answers = [x[0:10] for x in dataset[1]]
+        else:
+            dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0], dataset[1])]
+            ground_truth_answers = [x for x in dataset[1]]
         task_description = task_descriptions[i]
         flexible_prompt_template = FlexiblePromptTemplate(
         examples=dataset_as_dict,
@@ -461,7 +468,7 @@ if __name__ == "__main__":
         shot_type='Few-Shot'
         )
         pred = []
-        for j in range(0, len(gsm8k_examples),4):
+        for j in range(0, len(ground_truth_answers), 4):
             questions = [dataset_as_dict[idx]['question'] for idx in range(j, min(j+4, len(dataset_as_dict)))]
             batched_prompt = flexible_prompt_template.fill_in(questions)
             attempt_cnt = 0
