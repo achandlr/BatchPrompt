@@ -15,6 +15,7 @@ class TogetherAIGenerationParameters(TypedDict):
     logprobs: int
 
 class OpenAIGenerationParameters(TypedDict):
+    model_name: str
     temperature: float
     max_tokens: int
     frequency_penalty: float
@@ -92,6 +93,8 @@ class OpenAIModel(LanguageModel):
         self.api_token = api_token
         self.model_name = model_name
         self.generation_params = generation_params
+        
+        self.generation_params.pop("model_name")
 
     def __repr__(self):
         return f"OpenAIModel(model_name={self.model_name}, generation_params={self.generation_params})"

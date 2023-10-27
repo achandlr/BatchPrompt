@@ -150,7 +150,7 @@ class BatchPromptExperiment:
                 token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/OPEN_AI_TOKEN.txt')
                 model = OpenAIModel(
                     api_token=token,
-                    model_name=self.config.generation_params.model_name,
+                    model_name=self.config.generation_params['model_name'],
                     generation_params=self.config.generation_params
                 )
             case ModelAPIType.TOGETHER_AI:
@@ -220,14 +220,16 @@ class BatchPromptExperiment:
             (ids, self.batch_prompt_template.generate_prompt(batch))
             for (ids, batch) in batched_questions
         ]
+        # for debug purposes
+        batched_model_inputs = batched_model_inputs[:10]
         # TODO: igure out how to also save the config, which includes a lambda/function that might be tricky to pickle
         print("Dumping batched model inputs to file...")
         pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        batched_model_outputs = self.batch_query_model(batched_model_inputs)
         # # # save the pickled batched model outputs to file
-        # print("Dumping batched model outputs to file...")
-        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
+        print("Dumping batched model outputs to file...")
+        pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -375,7 +377,13 @@ if __name__ == "__main__":
         example_question_format=example_question_format,
         example_answer_format=example_answer_format,
         batch_size=4,
-        generation_params=DebugGenerationParameters(),
+        model_api=ModelAPIType.OPEN_AI,
+        generation_params=OpenAIGenerationParameters(
+            model_name='gpt-3.5-turbo',
+            temperature=0.6,
+            max_tokens=64,
+            frequency_penalty=1.0,
+        ),
         random_seed=0,
     )
 
