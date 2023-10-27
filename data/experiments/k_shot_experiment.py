@@ -358,22 +358,8 @@ if __name__ == "__main__":
     # example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
     # example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
 
-    def mbpp_question_format(example, i):
-        function_name = extract_function_name(example['test_list'][0])
-        example_question_format = f"Q[{i}]: {example['question']}. The function name is {function_name}"
-        return example_question_format
+    from data.parsing_functions import *
 
-    def mbpp_answer_format(example, i):
-        return f"Answer[{i}]: {example['code']}"
-
-    def gsm8k_question_format(example, i):
-        example_question_format = f"Q[{i}]: {example['question']}"
-        return example_question_format
-
-    def gsm8k_answer_format(example, i):
-        extract_numbers = lambda x: x.split("####")[-1].strip()
-        extracted_values = extract_numbers(example['answer'])
-        return f"A[{i}]: {extracted_values}"
     
     # THIS WORKS BUT NEED CHANGE EXAMPLE SELECTION
     # config = BatchPromptingExperimentConfig(
