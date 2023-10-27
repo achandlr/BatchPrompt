@@ -35,7 +35,7 @@ GENERATION_PARAMETERS_TYPE = Union[
     DebugGenerationParameters,
 ]
 
-#TODO: Rohan add gsm8k hard and common sense
+#TODO: Rohan add  common sense
 class DatasetType(Enum):
     GSM8K = auto()
     GSM8K_HARD = auto()
@@ -49,6 +49,7 @@ class ModelAPIType(Enum):
     DEBUG = auto()
 
 
+#TODO: Rohan add GMS8K_HARD and common sense
 DATASET_ID_KEYS = {
     DatasetType.GSM8K : ['idx'],
     DatasetType.MBPP : ['task_id'],
@@ -56,6 +57,7 @@ DATASET_ID_KEYS = {
     DatasetType.MNLI : ['idx'],
 }
 
+#TODO: Rohan add GMS8K_HARD and common sense
 DATASET_INPUT_KEYS = {
     DatasetType.GSM8K : ['question'],
     DatasetType.MBPP : ['text', 'test_list'],
@@ -63,12 +65,15 @@ DATASET_INPUT_KEYS = {
     DatasetType.MNLI : ['premise', 'hypothesis'],
 }
 
+#TODO: Rohan add GMS8K_HARD and common sense
 DATASET_LABEL_KEYS = {
     DatasetType.GSM8K : ['answer'],
     DatasetType.MBPP : ['code', 'test_list', 'test_setup_code', 'challenge_test_list'],
     DatasetType.RTE : ['label'],
     DatasetType.MNLI : ['label'],
 }
+
+#TODO: Rohan add GMS8K_HARD and common sense
 
 # these are the texts that go before the Q[i] in batch prompts
 DATASET_BATCH_INDEX_Q = {
@@ -78,6 +83,7 @@ DATASET_BATCH_INDEX_Q = {
     DatasetType.MNLI : ['Premise', 'Hypothesis'],
 }
 
+#TODO: Rohan add GMS8K_HARD and common sense
 # these are the texts that go before the Q[i] in batch prompts
 DATASET_BATCH_INDEX_A = {
     DatasetType.GSM8K : ['A'],
@@ -328,6 +334,7 @@ class BatchPromptTemplate:
         questions = []
 
         #TODO Rohan: Rather than having model return {'sentence1': 'In Italy, big protes...n Tuesday.', 'sentence2': 'The Italian governme...education.', 'label': 0, 'idx': 1577}, I think the model should return a string that represents the question, and a string that represents the desired output. I have code that does this.
+
         examples = self.get_examples(batch)
         for i, example in enumerate(examples):
             # the format functions take care of the Q[i] notation
@@ -337,6 +344,21 @@ class BatchPromptTemplate:
         for i, question in enumerate(batch):
             questions.append(self.example_question_format(question, None if self.is_baseline else i))
         
+        '''TODO Rohan:  add an extra sentence so that the LLM knows the following are examplesdefault_shot_types = {
+        "Zero-Shot": "",
+        "Few-Shot": "Consider the following examples and maintain their formatting.\n",
+        "One-Shot": "Consider the following example and maintain its formatting."
+        }'''
+            
+        '''TODO Rohan:  add an extra sentence so that the LLM knows the answers to the example questions are answers to the example questions ex: Response to examples in Batch for Few-Shot
+        }'''
+
+        '''
+        # TODO: ROhan add an extra sentence so that the LLM knows the following are the actual questions to answer: #Questions in Batch to answer
+        '''
+        '''
+        # TODO: Maybe have end of prompt be  "Response to Questions in Batch: \n"
+        '''
         prompt = "\n".join(
             [
                 # TODO: Should the spacing between description and examples and questions be user-defined/programmable?
@@ -406,17 +428,65 @@ if __name__ == "__main__":
     # random_seed=0,
     # )  
 
+    # TODO: This works, but output is not always in desired format. TODO: need to modify prompt with more instruction of what examples, what example responses, what actual questions, etc. to ensure format alignment
+    # config = BatchPromptingExperimentConfig(
+    # dataset=DatasetType.GSM8K,
+    # hf_dataset_path=["gsm8k", "main"],
+    # examples_split_name='train',
+    # evaluation_split_name='test',
+    # task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
+    # k_shot=3,
+    # is_baseline=False,
+    # example_selection=ExampleSelectionType.RANDOM,
+    # example_question_format=gsm8k_question_format,
+    # example_answer_format=gsm8k_answer_format,
+    # batch_size=4,
+    # model_api=ModelAPIType.OPEN_AI,
+    # generation_params=OpenAIGenerationParameters(
+    #     model_name='gpt-3.5-turbo',
+    #     temperature=0.6,
+    #     max_tokens=64,
+    #     # frequency_penalty=1.0,
+    # ),
+    # random_seed=0,
+    # )  
+
+    #TODO: This works, but we are sampling examples from the same batch that we want answers from. We need to fix this
+    # config = BatchPromptingExperimentConfig(
+    # dataset=DatasetType.GSM8K,
+    # hf_dataset_path=["reasoning-machines/gsm-hard"],
+    # # Our code cannot currently handle this without risking sampling examples that equal elements in our batch we want answers from
+    # examples_split_name='train',
+    # evaluation_split_name='train',
+    # task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
+    # k_shot=3,
+    # is_baseline=False,
+    # example_selection=ExampleSelectionType.RANDOM,
+    # example_question_format=gsm8k_hard_question_format,
+    # example_answer_format=gsm8k_hard_answer_format,
+    # batch_size=4,
+    # model_api=ModelAPIType.OPEN_AI,
+    # generation_params=OpenAIGenerationParameters(
+    #     model_name='gpt-3.5-turbo',
+    #     temperature=0.6,
+    #     max_tokens=64,
+    #     # frequency_penalty=1.0,
+    # ),
+    # random_seed=0,
+    # )  
+
     config = BatchPromptingExperimentConfig(
-    dataset=DatasetType.GSM8K,
-    hf_dataset_path=["gsm8k", "main"],
+    dataset=DatasetType.MNLI,
+    hf_dataset_path=["glue", "mnli"],
+    # Our code cannot currently handle this without risking sampling examples that equal elements in our batch we want answers from
     examples_split_name='train',
-    evaluation_split_name='test',
-    task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
+    evaluation_split_name='validation_matched',
+    task_description='''You are tasked with the job of Multi-Genre Natural Language Inference (MNLI). For each task, you will be given a premise sentence and a hypothesis sentence. Your job is to predict the relationship between the premise and the hypothesis, classifying each pair as either 'entailment', 'contradiction', or 'neutral'. Instruction: For each question in the batch, provide a single answer, following the format A[idx]: answer. Output only the answers with the associated index in "A[idx]: answer" format. Each answer should be only one of the following: 'entailment', 'contradiction', or 'neutral'. So in other words, for each question, you should output one of the following: A[idx]: entailment, A[idx]: contradiction, or A[idx]: neutral.''',
     k_shot=3,
     is_baseline=False,
     example_selection=ExampleSelectionType.RANDOM,
-    example_question_format=gsm8k_question_format,
-    example_answer_format=gsm8k_answer_format,
+    example_question_format=mnli_question_format,
+    example_answer_format=mnli_answer_format,
     batch_size=4,
     model_api=ModelAPIType.OPEN_AI,
     generation_params=OpenAIGenerationParameters(
@@ -427,6 +497,7 @@ if __name__ == "__main__":
     ),
     random_seed=0,
     )  
+
     # # TODO Rohan: Can we work together to make this configuration work?
     # config = BatchPromptingExperimentConfig(
     #     dataset=DatasetType.RTE,

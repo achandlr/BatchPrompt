@@ -17,7 +17,7 @@ class FlexiblePromptTemplate:
     }
     default_shot_types = {
         "Zero-Shot": "",
-        "Few-Shot": "Consider the following examples and maintain their formatting.",
+        "Few-Shot": "Consider the following examples and maintain their formatting.\n",
         "One-Shot": "Consider the following example and maintain its formatting."
     }
     # default_example_formats = {
