@@ -448,11 +448,12 @@ if __name__ == "__main__":
     stats = []
     DEBUG = True
     set_api_key(r"data/imported/api_token.txt")
+    # TODO: Note that this is a dummy script and doesn't remove invalid indices
     for i, dataset in enumerate([gsm8k_examples, gsm_hard_examples, commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
         
         if DEBUG:
             dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0][0:10], dataset[1][0:10])]
-            ground_truth_answers = [x[0:10] for x in dataset[1]]
+            ground_truth_answers = dataset[1][0:10]
         else:
             dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0], dataset[1])]
             ground_truth_answers = [x for x in dataset[1]]
@@ -482,6 +483,9 @@ if __name__ == "__main__":
                 except Exception as e:
                     print(e)
                     attempt_cnt +=1
+        if i ==0 or i==1:
+            pred = [int(x) for x in pred]
+            ground_truth_answers = [int(x) for x in ground_truth_answers]
         stat = evaluator.get_stats(y_pred=pred, y_true=ground_truth_answers, answer_type = answer_types[i])
 
         preds.append(pred)
