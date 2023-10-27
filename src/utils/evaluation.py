@@ -106,7 +106,7 @@ class CodeEvaluator:
 import re
 from typing import List
 
-def extract_answers_batch(output_str: str) -> List[int]:
+def extract_answers_batch(output_str: str, answer_type = None) -> List[int]:
     # Initialize an empty list to store the extracted answers.
     answers = []
     
@@ -119,6 +119,8 @@ def extract_answers_batch(output_str: str) -> List[int]:
     # Backup regex pattern to extract any number in the line.
     backup_pattern = r"(\d+)"
     
+    if answer_type == "commonsense":
+        raise None
     # Step 2: Loop through each line to extract the answer.
     for line in lines:
         # Try primary regex pattern first.

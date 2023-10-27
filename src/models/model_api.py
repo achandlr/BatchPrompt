@@ -2,8 +2,27 @@ import openai
 import time
 import together
 import backoff
+from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, TypedDict, Optional
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
+
+class TogetherAIGenerationParameters(TypedDict):
+    model_name: str
+    max_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    logprobs: int
+
+class OpenAIGenerationParameters(TypedDict):
+    model_name: str
+    temperature: float
+    max_tokens: int
+    frequency_penalty: float
+
+class DebugGenerationParameters(TypedDict):
+    pass
 
 def read_api_token(token_path):
     # Read API token from a dedicated file
@@ -20,7 +39,7 @@ class LanguageModel:
 
     def query(self, prompt : str) -> str:
         raise NotImplementedError
-
+    
 class TogetherAIModel(LanguageModel):
     """ 
     A wrapper class for the Together AI API.
@@ -77,36 +96,51 @@ class OpenAIModel(LanguageModel):
         self.api_token = api_token
         self.model_name = model_name
         self.generation_params = generation_params
+        
+        self.generation_params.pop("model_name")
 
     def __repr__(self):
         return f"OpenAIModel(model_name={self.model_name}, generation_params={self.generation_params})"
     
     @backoff.on_exception(backoff.expo, openai.error.RateLimitError, max_tries=10)
-    def query(self, prompt : str, timeout = 10) -> str:
+    def query(self, prompt : str) -> str:
         message = [{"role": "user", "content": prompt}]
-        estimated_tokens = len(prompt.split()) * 3
-        # Set the rate limits for different models
-        rate_limit = 10_000 if "gpt-4" in self.model_name else 90_000  
-        try_cnt = 0
-        max_try_cnt = 10  
-        while try_cnt < max_try_cnt:
-            with ThreadPoolExecutor() as executor:
-                future = executor.submit(openai.ChatCompletion.create,
-                                        model=self.model_name,
-                                        messages=message,
-                                        **self.generation_params)
-                try:
-                    response = future.result(timeout=timeout)
-                    text_response = response["choices"][0]["message"]["content"]
-                    return text_response
-                except (TimeoutError, Exception) as e:
-                    wait_time = (estimated_tokens / rate_limit) * 60 * (1 + try_cnt / 4)
-                    print(f"Error {str(e)} occurred. Waiting for {wait_time} seconds...")
-                    time.sleep(wait_time)
-                    try_cnt += 1
-        
-        raise Exception(f"Errors occurred too many times. Aborting...")
+        response = openai.ChatCompletion.create(
+            model=self.model_name,
+            messages=message,
+            **self.generation_params,
+        )
+        text_response = response["choices"][0]["message"]["content"]
+        return text_response
+
+
+class DebugModel(LanguageModel):
+    def __init__(self):
+        pass
+
+    def __repr__(self):
+        return f"DebugModel(model_name={self.model_name}, generation_params={self.generation_params})"
     
+    def query(self, prompt : str) -> str:
+        print(f"Model Recieved: {prompt}")
+    
+
+if __name__ == "__main__":
+    together_model = TogetherAIModel(
+        api_token=read_api_token("TOGETHER_AI_TOKEN.txt"),
+        model_name="togethercomputer/llama-2-7b",
+        generation_params={}
+    )
+    openai_model = OpenAIModel(
+        api_token=read_api_token("OPEN_AI_TOKEN.txt"),
+        model_name="gpt-3.5-turbo",
+        generation_params=OpenAIGenerationParameters(
+            temperature=0.7,
+            max_tokens=40,
+            frequency_penalty=0.5,
+        )
+    )
+
 def query_model(model, prompt, model_temperature=.2, timeout=10):
     message = [{"role": "user", "content": prompt}]
     # Estimate the number of tokens used

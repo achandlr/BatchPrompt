@@ -139,9 +139,10 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
             questions = questions_np[list(allowed_indices)]
             answers_np = np.array(dataset[data_location]['target'])
             answers = answers_np[list(allowed_indices)]
+            answers_str_ints = [str(int(answer)) for answer in answers]
             # questions =  [dataset[data_location]['input'][i] for i in allowed_indices]
             # answers =  [dataset[data_location]['target'][i] for i in allowed_indices]
-            return questions, answers
+            return questions, answers_str_ints
     elif dataset_name == "commonsense_qa":
         allowed_indices = get_allowed_indices(disallowed_data_indices, len(dataset[data_location]['answerKey']))
         if example_type == "CoT":
@@ -449,11 +450,13 @@ if __name__ == "__main__":
     DEBUG = True
     set_api_key(r"data/imported/api_token.txt")
     # TODO: Note that this is a dummy script and doesn't remove invalid indices
-    for i, dataset in enumerate([gsm8k_examples, gsm_hard_examples, commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
-        
+    # for i, dataset in enumerate([gsm8k_examples, gsm_hard_examples, commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
+    # TODO: reset to looping through all
+    for i, dataset in enumerate([commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
+
         if DEBUG:
             dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0][0:10], dataset[1][0:10])]
-            ground_truth_answers = dataset[1][0:10]
+            ground_truth_answers = [x for x in dataset[1]][0:10]
         else:
             dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0], dataset[1])]
             ground_truth_answers = [x for x in dataset[1]]
@@ -476,7 +479,11 @@ if __name__ == "__main__":
             while attempt_cnt <10:
                 try:
                     batched_output = query_model("gpt-3.5-turbo", batched_prompt)
-                    batched_output_parsed = extract_answers_batch(batched_output)
+                    # TODO: bad code
+                    if i ==2:
+                        batched_output_parsed = extract_answers_batch(batched_output, answer_type="commonsense")
+                    else:
+                        batched_output_parsed = extract_answers_batch(batched_output)
                     assert len(batched_output_parsed) == len(questions)
                     pred.extend(batched_output_parsed)
                     break
