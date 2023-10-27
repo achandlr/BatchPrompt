@@ -417,7 +417,7 @@ task_descriptions  = ['''Solve the following math question. # Instruction: For e
                       '''You are tasked with the job of Recognizing Textual Entailment (RTE). For each task, you will be given a text and a hypothesis. Your job is to determine whether the text entails the hypothesis, classifying each text-hypothesis pair as either 'entailment' or 'not entailment'. Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format. ''',
                       '''You are tasked with the job of Multi-Genre Natural Language Inference (MNLI). For each task, you will be given a premise sentence and a hypothesis sentence. Your job is to predict the relationship between the premise and the hypothesis, classifying each pair as either 'entailment', 'contradiction', or 'neutral'. Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format ''']
 
-
+answer_types = ["numerical", "numerical", "categorical", "code", "binary", "categorical"]
 if LOAD_EXAMPLES:
     gsm8k_examples = get_few_shot_examples(gsm8k, "gsm8k", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
     gsm8k_examples_CoT = get_few_shot_examples(gsm8k, "gsm8k", example_type = "CoT", disallowed_data_indices = None, data_location = "train", needed_extra_dataset = None)
@@ -445,12 +445,13 @@ if __name__ == "__main__":
     evaluator = Evaluation()
 
     ground_truth_answers = [x[1] for x in gsm8k_examples]
-    pred = []
+    preds = []
+    stats = []
     for i, dataset in enumerate([gsm8k_examples, gsm_hard_examples, commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
-        gsm8k_examples_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0], dataset[1])]
+        dataset_as_dict = [{"question": question, 'output': output} for question, output in zip(dataset[0], dataset[1])]
         task_description = task_descriptions[i]
         flexible_prompt_template = FlexiblePromptTemplate(
-        examples=gsm8k_examples_as_dict,
+        examples=dataset_as_dict,
         task_description=task_description,
         # example_format='Q: {question}\nA: {output}',
         # example_format='{question}\n{output}',
@@ -459,12 +460,24 @@ if __name__ == "__main__":
         reasoning_type='End-to-end',
         shot_type='Few-Shot'
         )
-
-        for i in range(0, len(gsm8k_examples),4):
-            questions = [gsm8k_examples_as_dict[idx]['question'] for idx in range(i, min(i+4, len(gsm8k_examples)))]
+        pred = []
+        for j in range(0, len(gsm8k_examples),4):
+            questions = [dataset_as_dict[idx]['question'] for idx in range(j, min(j+4, len(dataset_as_dict)))]
             batched_prompt = flexible_prompt_template.fill_in(questions)
-            batched_output = query_model("gpt-3.5-turbo", batched_prompt)
-            batched_output_parsed = extract_answers_batch(batched_output)
-            pass
-        evaluator.get_stats(y_pred=pred, y_true=ground_truth_answers, answer_type = "numerical")
+            attempt_cnt = 0
+            while attempt_cnt <10:
+                try:
+                    batched_output = query_model("gpt-3.5-turbo", batched_prompt)
+                    batched_output_parsed = extract_answers_batch(batched_output)
+                    assert len(batched_output_parsed) == len(questions)
+                    pred.extend(batched_output_parsed)
+                    break
+                except Exception as e:
+                    print(e)
+                    attempt_cnt +=1
+        stat = evaluator.get_stats(y_pred=pred, y_true=ground_truth_answers, answer_type = answer_types[i])
+
+        preds.append(pred)
+        stats.append(stat)
+    print(stats)
             
