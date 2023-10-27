@@ -1,8 +1,27 @@
 import together
 import openai
 import backoff
+from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, TypedDict, Optional
 
+
+class TogetherAIGenerationParameters(TypedDict):
+    model_name: str
+    max_tokens: int
+    temperature: float
+    top_p: float
+    top_k: int
+    repetition_penalty: float
+    logprobs: int
+
+class OpenAIGenerationParameters(TypedDict):
+    temperature: float
+    max_tokens: int
+    frequency_penalty: float
+
+@dataclass
+class DebugGenerationParameters:
+    pass
 
 def read_api_token(token_path : str) -> str:
     # Read API token from a dedicated file
@@ -82,16 +101,35 @@ class OpenAIModel(LanguageModel):
         message = [{"role": "user", "content": prompt}]
         response = openai.ChatCompletion.create(
             model=self.model_name,
-            message=message,
+            messages=message,
             **self.generation_params,
         )
         text_response = response["choices"][0]["message"]["content"]
         return text_response
     
+class DebugModel(LanguageModel):
+    def __init__(self):
+        pass
+
+    def __repr__(self):
+        return f"DebugModel(model_name={self.model_name}, generation_params={self.generation_params})"
+    
+    def query(self, prompt : str) -> str:
+        print(f"Model Recieved: {prompt}")
+    
 
 if __name__ == "__main__":
-    model = TogetherAIModel(
-        api_token=read_api_token("RJHA_TOGETHER_AI_TOKEN.txt"),
+    together_model = TogetherAIModel(
+        api_token=read_api_token("TOGETHER_AI_TOKEN.txt"),
         model_name="togethercomputer/llama-2-7b",
         generation_params={}
+    )
+    openai_model = OpenAIModel(
+        api_token=read_api_token("OPEN_AI_TOKEN.txt"),
+        model_name="gpt-3.5-turbo",
+        generation_params=OpenAIGenerationParameters(
+            temperature=0.7,
+            max_tokens=40,
+            frequency_penalty=0.5,
+        )
     )

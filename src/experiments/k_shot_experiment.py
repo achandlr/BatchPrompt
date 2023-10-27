@@ -1,6 +1,15 @@
 import random
 import pickle
-from src.models.model_api import LanguageModel, TogetherAIModel, OpenAIModel, read_api_token
+from src.models.model_api import (
+    read_api_token, 
+    LanguageModel, 
+    TogetherAIModel, 
+    OpenAIModel, 
+    DebugModel,
+    TogetherAIGenerationParameters, 
+    OpenAIGenerationParameters, 
+    DebugGenerationParameters,
+)
 from dataclasses import dataclass
 from datasets import load_dataset, Dataset
 from typing import Callable, List, Dict, Any, Tuple, Union, Optional, TypedDict
@@ -17,6 +26,11 @@ from langchain.embeddings import HuggingFaceEmbeddings
 # TYPES AND ENUMS
 ID_TYPE = Union[str, int]
 EXAMPLE_FORMAT_FUNCTION_TYPE = Callable[[Dict[str, Any], Optional[int]], str]
+GENERATION_PARAMETERS_TYPE = Union[
+    TogetherAIGenerationParameters, 
+    OpenAIGenerationParameters, 
+    DebugGenerationParameters,
+]
 
 class DatasetType(Enum):
     GSM8K = auto()
@@ -24,8 +38,12 @@ class DatasetType(Enum):
     RTE = auto()
     MNLI = auto()
 
-# DICTS
+class ModelAPIType(Enum):
+    TOGETHER_AI = auto()
+    OPEN_AI = auto()
+    DEBUG = auto()
 
+# DICTS
 DATASET_ID_KEYS = {
     DatasetType.GSM8K : ['idx'],
     DatasetType.MBPP : ['task_id'],
@@ -70,22 +88,6 @@ class ExampleSelectionType(Enum):
     MAX_MARGINAL_RELEVANCE = auto()
 
 @dataclass
-class TogetherAIGenerationParameters:
-    model_name: str
-    max_tokens: int
-    temperature: float
-    top_p: float
-    top_k: int
-    repetition_penalty: float
-    logprobs: int
-
-@dataclass
-class OpenAIGenerationParameters:
-    model_temperature: float
-    max_tokens: int
-    frequency_penalty: float
-
-@dataclass
 class BatchPromptingExperimentConfig:
     # could be the name of a dataset, or a list of strings that specify the path to a dataset 
     # e.g. 'mbpp' vs ['mbpp', 'sanitized']
@@ -103,7 +105,8 @@ class BatchPromptingExperimentConfig:
     example_answer_format: EXAMPLE_FORMAT_FUNCTION_TYPE
     batch_size: int
     # Note that this will include the api model name whereas model_name will be less formal like GPT-3.5 vs LLama-2-70B, etc.
-    generation_params: Union[TogetherAIGenerationParameters, OpenAIGenerationParameters]
+    model_api: ModelAPIType
+    generation_params: GENERATION_PARAMETERS_TYPE
     random_seed: int = 0
 
 # datasets = ['GSM8K', 'MBPP', 'glue-RTE', 'glue-MNLI']
@@ -142,23 +145,27 @@ class BatchPromptExperiment:
         random.seed(self.config.random_seed)
     
     def load_language_model(self) -> LanguageModel:
-        if isinstance(self.config.generation_params, OpenAIGenerationParameters):
-            token = read_api_token('src/data/imported/api_token.txt')
-            model = OpenAIModel(
-                api_token=token,
-                model_name=self.config.generation_params.model_name,
-                generation_params=self.config.generation_params
-            )
-        elif isinstance(self.config.generation_params, TogetherAIGenerationParameters):
-            # together.ai
-            token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/RJHA_TOGETHER_AI_TOKEN.txt')
-            model = TogetherAIModel(
-                api_token=token,
-                model_name=self.config.generation_params.model_name,
-                generation_params=self.config.generation_params
-            )
-        else: 
-            raise NotImplementedError("Only OpenAI and TogetherAI APIs are currently supported")
+        match self.config.model_api:
+            case ModelAPIType.OPEN_AI:
+                token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/OPEN_AI_TOKEN.txt')
+                model = OpenAIModel(
+                    api_token=token,
+                    model_name=self.config.generation_params.model_name,
+                    generation_params=self.config.generation_params
+                )
+            case ModelAPIType.TOGETHER_AI:
+                # together.ai
+                token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/TOGETHER_AI_TOKEN.txt')
+                model = TogetherAIModel(
+                    api_token=token,
+                    model_name=self.config.generation_params.model_name,
+                    generation_params=self.config.generation_params
+                )
+            case ModelAPIType.DEBUG:
+                model = DebugModel()
+            # otherwise
+            case _: 
+                raise NotImplementedError("Only OpenAI and TogetherAI APIs are currently supported")
         # cover all bases
         self.model = model
         return model
@@ -217,7 +224,6 @@ class BatchPromptExperiment:
         print("Dumping batched model inputs to file...")
         pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-
         # batched_model_outputs = self.batch_query_model(batched_model_inputs)
         # # # save the pickled batched model outputs to file
         # print("Dumping batched model outputs to file...")
@@ -333,6 +339,30 @@ if __name__ == "__main__":
     example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
     example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
 
+    # config = BatchPromptingExperimentConfig(
+    #     dataset=DatasetType.RTE,
+    #     hf_dataset_path=['glue', 'rte'],
+    #     examples_split_name='train',
+    #     evaluation_split_name='validation',
+    #     task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
+    #     k_shot=3,
+    #     is_baseline=False,
+    #     example_selection=ExampleSelectionType.RANDOM,
+    #     example_question_format=example_question_format,
+    #     example_answer_format=example_answer_format,
+    #     batch_size=4,
+    #     generation_params=TogetherAIGenerationParameters(
+    #         model_name='togethercomputer/llama-2-7b',
+    #         max_tokens=64,
+    #         temperature=0.7,
+    #         top_p=0.9,
+    #         top_k=0,
+    #         repetition_penalty=1.0,
+    #         logprobs=0,
+    #     ),
+    #     random_seed=0,
+    # )
+
     config = BatchPromptingExperimentConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
@@ -345,15 +375,7 @@ if __name__ == "__main__":
         example_question_format=example_question_format,
         example_answer_format=example_answer_format,
         batch_size=4,
-        generation_params=TogetherAIGenerationParameters(
-            model_name='togethercomputer/llama-2-7b',
-            max_tokens=64,
-            temperature=0.7,
-            top_p=0.9,
-            top_k=0,
-            repetition_penalty=1.0,
-            logprobs=0,
-        ),
+        generation_params=DebugGenerationParameters(),
         random_seed=0,
     )
 
