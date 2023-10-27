@@ -176,67 +176,68 @@ class FlexiblePromptTemplate:
         batched_prompt = '\n'.join(filled_prompts)
         return batched_prompt
     
+if __name__ == "__main__":
 
-flexible_prompt_template = FlexiblePromptTemplate(
-    examples=[
-        {'question': 'What is 2+2?', 'output': '4'},
-        {'question': 'What is 3+3?', 'output': '6'},
-        {'question': 'How many elbows does a man have?', 'output': '2'},
-        {'question': 'Where are elbows?', 'output': 'Elbows are on the arm.'}
-    ],
-    task_description='You can solve arithmetic problems. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format',
-    # example_format='Q: {question}\nA: {output}',
-    # example_format='{question}\n{output}',
-    # example_format='{question}\n{output}',
-    num_shots_per_question=2,
-    reasoning_type='End-to-end',
-    shot_type='Few-Shot'
-)
-
-
-# # Initialize with examples, task description, and other settings
-# flexible_prompt_template = FlexiblePromptTemplate(
-#     examples=[
-#         {'question': 'What is 2+2?', 'output': '4'},
-#         {'question': 'What is 3+3?', 'output': '6'},
-#         {'question': 'How many elbows does a man have?', 'output': '2'},
-#         {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
-#     ],
-#     task_description='# Instruction: Answer all questions in the batch. For each question, provide a single answer in the following format: A[index]: answer.\n# Consider the following example to understand the formatting. The example is arithmetic but you should answer all types of questions in the batch.',
-#     # example_format='Q: {question}\nA: {output}',
-#     # example_format='{question}\n{output}',
-#     # example_format='{question}\n{output}',
-#     num_shots_per_question=1,
-#     reasoning_type='End-to-end',
-#     shot_type='One-Shot'
-# )
-
-# flexible_prompt_template = FlexiblePromptTemplate(
-#     examples=[
-#         {'question': 'What is 2+2?', 'output': '4'},
-#         {'question': 'What is 3+3?', 'output': '6'},
-#         {'question': 'How many elbows does a man have?', 'output': '2'},
-#         {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
-#     ],
-#     task_description='''# Instruction: Answer all questions in the batch, regardless of their type. For each question, provide a single answer and follow the format: A[index]: answer.\n\n# Questions in Batch to Answer''',
-#     # example_format='Q: {question}\nA: {output}',
-#     # example_format='{question}\n{output}',
-#     # example_format='{question}\n{output}',
-#     num_shots_per_question=2,
-#     reasoning_type='End-to-end',
-#     shot_type='Zero-Shot'
-# )
+    flexible_prompt_template = FlexiblePromptTemplate(
+        examples=[
+            {'question': 'What is 2+2?', 'output': '4'},
+            {'question': 'What is 3+3?', 'output': '6'},
+            {'question': 'How many elbows does a man have?', 'output': '2'},
+            {'question': 'Where are elbows?', 'output': 'Elbows are on the arm.'}
+        ],
+        task_description='You can solve arithmetic problems. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format',
+        # example_format='Q: {question}\nA: {output}',
+        # example_format='{question}\n{output}',
+        # example_format='{question}\n{output}',
+        num_shots_per_question=2,
+        reasoning_type='End-to-end',
+        shot_type='Few-Shot'
+    )
 
 
-# Generate a batched prompt with multiple questions
-batched_prompt = flexible_prompt_template.fill_in(['What is 5+5?', 'How many elbows does a women have?', 'Why are elbows important?'])
-set_api_key("data\\imported\\datasets\\api_token.txt")
+    # # Initialize with examples, task description, and other settings
+    # flexible_prompt_template = FlexiblePromptTemplate(
+    #     examples=[
+    #         {'question': 'What is 2+2?', 'output': '4'},
+    #         {'question': 'What is 3+3?', 'output': '6'},
+    #         {'question': 'How many elbows does a man have?', 'output': '2'},
+    #         {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
+    #     ],
+    #     task_description='# Instruction: Answer all questions in the batch. For each question, provide a single answer in the following format: A[index]: answer.\n# Consider the following example to understand the formatting. The example is arithmetic but you should answer all types of questions in the batch.',
+    #     # example_format='Q: {question}\nA: {output}',
+    #     # example_format='{question}\n{output}',
+    #     # example_format='{question}\n{output}',
+    #     num_shots_per_question=1,
+    #     reasoning_type='End-to-end',
+    #     shot_type='One-Shot'
+    # )
 
-output = query_model("gpt-3.5-turbo", batched_prompt)
+    # flexible_prompt_template = FlexiblePromptTemplate(
+    #     examples=[
+    #         {'question': 'What is 2+2?', 'output': '4'},
+    #         {'question': 'What is 3+3?', 'output': '6'},
+    #         {'question': 'How many elbows does a man have?', 'output': '2'},
+    #         {'question': 'Why are elbows important?', 'output': 'They make the arm bend.'}
+    #     ],
+    #     task_description='''# Instruction: Answer all questions in the batch, regardless of their type. For each question, provide a single answer and follow the format: A[index]: answer.\n\n# Questions in Batch to Answer''',
+    #     # example_format='Q: {question}\nA: {output}',
+    #     # example_format='{question}\n{output}',
+    #     # example_format='{question}\n{output}',
+    #     num_shots_per_question=2,
+    #     reasoning_type='End-to-end',
+    #     shot_type='Zero-Shot'
+    # )
 
-# Display the batched prompt
-print(batched_prompt)
-print(output)
+
+    # Generate a batched prompt with multiple questions
+    batched_prompt = flexible_prompt_template.fill_in(['What is 5+5?', 'How many elbows does a women have?', 'Why are elbows important?'])
+    set_api_key(r"data/imported/datasets/api_token.txt")
+
+    output = query_model("gpt-3.5-turbo", batched_prompt)
+
+    # Display the batched prompt
+    print(batched_prompt)
+    print(output)
 
 '''
 k_total

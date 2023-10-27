@@ -356,20 +356,20 @@ if __name__ == "__main__":
         example_question_format=example_question_format,
         example_answer_format=example_answer_format,
         batch_size=4,
-        generation_params=TogetherAIGenerationParameters(
-            model_name='togethercomputer/llama-2-7b',
-            max_tokens=64,
-            temperature=0.7,
-            top_p=0.9,
-            top_k=0,
-            repetition_penalty=1.0,
-            logprobs=0,
-        ),
-        # generation_params=OpenAIGenerationParameters(
-        #     model_name = "gpt-3.5-turbo",
-        #     temperature= .2,
-        #     max_tokens = 4000
+        # generation_params=TogetherAIGenerationParameters(
+        #     model_name='togethercomputer/llama-2-7b',
+        #     max_tokens=64,
+        #     temperature=0.7,
+        #     top_p=0.9,
+        #     top_k=0,
+        #     repetition_penalty=1.0,
+        #     logprobs=0,
         # ),
+        generation_params=OpenAIGenerationParameters(
+            model_name = "gpt-3.5-turbo",
+            temperature= .2,
+            max_tokens = 4000
+        ),
         random_seed=0,
     )
 
