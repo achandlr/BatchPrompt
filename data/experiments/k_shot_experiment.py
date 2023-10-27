@@ -174,6 +174,7 @@ class BatchPromptExperiment:
         if self.model is None:
             self.model = self.load_language_model()
 
+        # TODO Rohan: Make this work. Currently getting error with OpenAI and not returning result within 3 seconds with TogetherAI
         batched_results = [
             (ids, self.model.query(prompt))
             for (ids, prompt) in tqdm(model_inputs)
@@ -311,6 +312,7 @@ class BatchPromptTemplate:
         example_answers = []
         questions = []
 
+        #TODO Rohan: Rather than having model return {'sentence1': 'In Italy, big protes...n Tuesday.', 'sentence2': 'The Italian governme...education.', 'label': 0, 'idx': 1577}, I think the model should return a string that represents the question, and a string that represents the desired output. I have code that does this.
         examples = self.get_examples(batch)
         for i, example in enumerate(examples):
             # the format functions take care of the Q[i] notation
@@ -341,6 +343,7 @@ if __name__ == "__main__":
     example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
     example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
 
+    # TODO Rohan: Can we work together to make this configuration work?
     config = BatchPromptingExperimentConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
