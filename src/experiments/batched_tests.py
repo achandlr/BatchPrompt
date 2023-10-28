@@ -71,40 +71,65 @@ def extract_answers_batch(output_str: str, answer_type = None) -> List[int]:
     else: 
         raise NotImplementedError()
     
-def get_ground_truth(answers_dict, task_name):
-    if task_name == "MBPP":
-        raise NotImplementedError()
-    elif task_name == "GSM8K":
-        raise NotImplementedError()
-    elif task_name == "GSM8K_HARD":
-        raise NotImplementedError()
-    elif task_name == "COMMON_SENSE":
-        raise NotImplementedError()
-    elif task_name == "MNLI":
-        raise NotImplementedError()
-    elif task_name == "RTE":
-        raise NotImplementedError()
-    else:
-        raise ValueError("Task name not recognized.")
-    return None
+def get_index_to_ground_truth(answers_dict, task_name):
+    task_name = task_name.upper()
+    index_to_ground_truth = {}
+    for answer_index, answer in answers_dict.items():
+        if task_name == "MBPP":
+            raise NotImplementedError()
+        elif task_name == "GSM8K":
+            raise NotImplementedError()
+        elif task_name == "GSM8K_HARD":
+            raise NotImplementedError()
+        elif task_name == "COMMON_SENSE":
+            raise NotImplementedError()
+        elif task_name == "MNLI":
+            raise NotImplementedError()
+        elif task_name == "RTE":
+            index_to_ground_truth[answer_index] = int(answer["label"])
+        else:
+            raise ValueError("Task name not recognized.")
+    return index_to_ground_truth
 
-def get_index_to_answer_dict(batched_model_outputs, task_name):
-    index_to_answer = {}
+def get_index_to_pred(batched_model_outputs, task_name):
+    index_to_pred = {}
     for batch in batched_model_outputs:
         indices, LLM_output = batch
         answers = extract_answers_batch(LLM_output, task_name)
         # answers = parse_batched_answers(LLM_output, task_name)
-        if len(answer) == len(batch):
+        if len(answers) == len(batch[0]):
             for index, answer in zip(indices, answers):
-                index_to_answer[index] = answer
+                index_to_pred[index] = answer
         else:
             raise ValueError("Either the parsing fails or the LLM prompt fails to return desired output.")
-    return index_to_answer
+    return index_to_pred
+
+def get_ordered_lists(index_to_pred: dict, index_to_ground_truth: dict) -> (list, list):
+    # Initialize empty lists for predictions and ground truth values.
+    pred = []
+    ground_truth = []
+    
+    # Ensure both dictionaries have the same keys, otherwise raise an exception.
+    if set(index_to_pred.keys()) != set(index_to_ground_truth.keys()):
+        raise ValueError("The keys in both dictionaries should match.")
+    
+    # Sort the keys to ensure the values are ordered.
+    sorted_keys = sorted(index_to_pred.keys())
+    
+    # Populate the 'pred' list with prediction values in sorted order of keys.
+    for key in sorted_keys:
+        pred.append(index_to_pred[key])
+        
+    # Populate the 'ground_truth' list with ground truth values in sorted order of keys.
+    for key in sorted_keys:
+        ground_truth.append(index_to_ground_truth[key])
+        
+    return pred, ground_truth
 
 def get_pred_ground_truth(batched_model_outputs, answers_dict, task_name):
-    index_to_answer_dict = get_index_to_answer_dict(batched_model_outputs, task_name)
-    ground_truth = get_ground_truth(answers_dict, task_name)
-    pred = [] # TODO: Implement
+    index_to_pred = get_index_to_pred(batched_model_outputs, task_name)
+    index_to_ground_truth = get_index_to_ground_truth(answers_dict, task_name)
+    pred, ground_truth = get_ordered_lists(index_to_pred, index_to_ground_truth)
     return pred, ground_truth
 
 
@@ -130,6 +155,12 @@ for task_name, configs in config_param_list.items():
     model_api=ModelAPIType.OPEN_AI,
     generation_params=oai_gen_params,
     random_seed=0,
+    debug=BatchPromptingDebugConfig(
+            truncate_examples=True,
+            truncate_batch_queries=True,
+            save_batched_model_inputs=None,
+            save_batched_model_outputs=None,
+        )
 )
     experiment = BatchPromptExperiment(config)
     batched_model_outputs, answers_dict = experiment.execute()
