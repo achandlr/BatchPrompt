@@ -91,18 +91,48 @@ class ExampleSelectionType(Enum):
     MAX_MARGINAL_RELEVANCE = auto()
 
 @dataclass
-class BatchPromptingExperimentConfig:
+class DatasetConfig:
+    dataset : DatasetType
     # could be the name of a dataset, or a list of strings that specify the path to a dataset 
     # e.g. 'mbpp' vs ['mbpp', 'sanitized']
-    dataset : DatasetType
-    hf_dataset_path: Union[str, List[str]]
-    examples_split_name: str
-    evaluation_split_name: str
+    hf_dataset_path: Optional[Union[str, List[str]]] = None
+    split_name: Optional[str] = None
+    # can also choose to load a dataset from a json file
+    local_path: Optional[Path] = None
+
+    def __post_init__(self):
+        # validate the config
+        self.validate()
+
+    def validate(self):
+        match (self.hf_dataset_path is not None, self.split_name is not None, self.local_path is not None):
+            case (True, False, _) | (False, True, _):
+                raise ValueError("Must either both or neither specify a huggingface dataset path and a split name")
+            case (True, True , True):
+                raise ValueError("Cannot specify both a local path and a huggingface dataset path")
+            case(False, False, False):
+                raise ValueError("Must specify either a local path or a huggingface dataset path")
+            case _: pass
+        
+        if self.local_path is not None:
+            if not self.local_path.exists():
+                raise ValueError(f"Local path {self.local_path} does not exist")
+            if not self.local_path.is_file():
+                raise ValueError(f"Local path {self.local_path} is not a file")
+            if not self.local_path.suffix == '.json':
+                raise ValueError(f"Local path {self.local_path} is not a json file")
+
+
+@dataclass
+class BatchPromptingExperimentConfig:
+    # can either load a dataset from huggingface or from a local json file
+    questions_dataset_config : DatasetConfig
+    examples_dataset_config : DatasetConfig
+    # can also choose to load a dataset from a file for questions or examples
     task_description: str
     # we specify baseline as a boolean as we might have a batch of size 1 at the end, but it will still
     # use the batched prompt template rather than the baseline prompt template
     k_shot: int
-    is_baseline: bool
     example_selection: ExampleSelectionType 
     example_question_format: EXAMPLE_FORMAT_FUNCTION_TYPE
     example_answer_format: EXAMPLE_FORMAT_FUNCTION_TYPE
@@ -120,49 +150,69 @@ class BatchPromptExperiment:
             config: BatchPromptingExperimentConfig,
     ):
         self.config = config
-        self.examples = load_dataset(
-            *self.config.hf_dataset_path,
-            split=self.config.examples_split_name,
-        )
-        self.questions = load_dataset(
-            *self.config.hf_dataset_path,
-            split=self.config.evaluation_split_name,
-        )
+        self.questions = self.load_dataset(self.config.questions_dataset_config)
+        self.examples = self.load_dataset(self.config.examples_dataset_config)
+        # self.examples = load_dataset(
+        #     *self.config.hf_dataset_path,
+        #     split=self.config.examples_split_name,
+        # )
+        # self.questions = load_dataset(
+        #     *self.config.hf_dataset_path,
+        #     split=self.config.questions_split_name,
+        # )
         # must add an index column to gsm8k
-        if self.config.dataset == DatasetType.GSM8K:
-            self.questions = self.questions.add_column('idx', list(range(len(self.questions))))
 
         self.batch_prompt_template = BatchPromptTemplate(
             examples=self.examples,
-            dataset=self.config.dataset,
+            dataset=self.config.questions_dataset_config.dataset,
             task_description=self.config.task_description,
             num_questions=self.config.batch_size,
             num_examples=self.config.k_shot,
-            is_baseline=self.config.is_baseline,
             example_question_format=self.config.example_question_format,
             example_answer_format=self.config.example_answer_format,
             example_selection=self.config.example_selection,
         )
-        self.model = None
-        self.model : LanguageModel = self.load_language_model()
+        self.model = self.load_language_model(
+            model_api=self.config.model_api, 
+            generation_params=self.config.generation_params
+        )
         random.seed(self.config.random_seed)
+
+    def load_dataset(self, dataset_config: DatasetConfig) -> Dataset:
+        if dataset_config.local_path is not None:
+            # load locally
+            dataset = load_dataset(
+                'json', 
+                data_files=dataset_config.local_path,
+                split='train', # loading from file makes a dataset with only train split
+            )
+        else:
+            # load from huggingface
+            dataset = load_dataset(
+                *dataset_config.hf_dataset_path,
+                split=dataset_config.split_name,
+            )
+        # add an index column to gsm8k
+        if dataset_config.dataset == DatasetType.GSM8K:
+            dataset = dataset.add_column('idx', list(range(len(self.questions))))
+        return dataset
     
-    def load_language_model(self) -> LanguageModel:
-        match self.config.model_api:
+    def load_language_model(self, model_api, generation_params) -> LanguageModel:
+        match model_api:
             case ModelAPIType.OPEN_AI:
                 token = read_api_token(Path("data/imported/open_ai_token.txt"))
                 model = OpenAIModel(
                     api_token=token,
-                    model_name=self.config.generation_params['model_name'],
-                    generation_params=self.config.generation_params
+                    model_name=generation_params['model_name'],
+                    generation_params=generation_params
                 )
             case ModelAPIType.TOGETHER_AI:
                 # together.ai
                 token = read_api_token(Path("data/imported/together_ai_token.txt"))
                 model = TogetherAIModel(
                     api_token=token,
-                    model_name=self.config.generation_params.model_name,
-                    generation_params=self.config.generation_params
+                    model_name=generation_params.model_name,
+                    generation_params=generation_params
                 )
             case ModelAPIType.DEBUG:
                 model = DebugModel()
@@ -170,7 +220,6 @@ class BatchPromptExperiment:
             case _: 
                 raise NotImplementedError("Only OpenAI and TogetherAI APIs are currently supported")
         # cover all bases
-        self.model = model
         return model
 
     def batch_query_model(
@@ -196,7 +245,7 @@ class BatchPromptExperiment:
         ]
         batched_questions : List[Tuple[List[ID_TYPE], Dict[str, Any]]] = []
         for batch in batched_dataset:
-            ids = batch[DATASET_ID_KEYS[self.config.dataset][0]]
+            ids = batch[DATASET_ID_KEYS[self.config.questions_dataset_config.dataset][0]]
             questions = [
                 {key : batch[key][i] for key in batch.keys()}
                 for i in range(len(ids))
@@ -230,10 +279,10 @@ class BatchPromptExperiment:
         print("Dumping batched model inputs to file...")
         pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-        batched_model_outputs = self.batch_query_model(batched_model_inputs)
-        # save the pickled batched model outputs to file
-        print("Dumping batched model outputs to file...")
-        pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
+        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        # # save the pickled batched model outputs to file
+        # print("Dumping batched model outputs to file...")
+        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -262,7 +311,6 @@ class BatchPromptTemplate:
             task_description: str,
             num_questions: int,
             num_examples: int,
-            is_baseline: bool,
             # the optional int is the index of the example in the batch, none if baseline
             example_question_format: Callable[[Dict[str, Any], Optional[int]], str],
             example_answer_format: Callable[[Dict[str, Any], Optional[int]], str],
@@ -273,7 +321,6 @@ class BatchPromptTemplate:
         self.task_description = task_description
         self.num_questions = num_questions
         self.num_examples = num_examples
-        self.is_baseline = is_baseline
         self.example_question_format = example_question_format
         self.example_answer_format = example_answer_format
         self.example_selection = example_selection
@@ -338,7 +385,7 @@ class BatchPromptTemplate:
             example_answers.append(self.example_answer_format(example, i))
         
         for i, question in enumerate(batch):
-            questions.append(self.example_question_format(question, None if self.is_baseline else i))
+            questions.append(self.example_question_format(question, i))
         
         prompt = "\n".join(
             [
@@ -367,14 +414,24 @@ if __name__ == "__main__":
             frequency_penalty=1.0,
         )
 
-    config = BatchPromptingExperimentConfig(
+    questions_config = DatasetConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
-        examples_split_name='train',
-        evaluation_split_name='validation',
+        split_name='validation',
+    )
+
+    examples_config = DatasetConfig(
+        dataset=DatasetType.RTE,
+        hf_dataset_path=['glue', 'rte'],
+        split_name='train',
+    )
+
+
+    config = BatchPromptingExperimentConfig(
+        questions_dataset_config=questions_config,
+        examples_dataset_config=examples_config,
         task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
         k_shot=7,
-        is_baseline=False,
         example_selection=ExampleSelectionType.MAX_MARGINAL_RELEVANCE,
         example_question_format=example_question_format,
         example_answer_format=example_answer_format,
@@ -395,10 +452,9 @@ if __name__ == "__main__":
 #     dataset=DatasetType.RTE,
 #     hf_dataset_path=['glue', 'rte'],
 #     examples_split_name='train',
-#     evaluation_split_name='validation',
+#     questions_split_name='validation',
 #     task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
 #     k_shot=3,
-#     is_baseline=False,
 #     example_selection=ExampleSelectionType.RANDOM,
 #     example_question_format=example_question_format,
 #     example_answer_format=example_answer_format,
