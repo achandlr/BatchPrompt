@@ -92,9 +92,9 @@ class OpenAIModel(LanguageModel):
         openai.api_key = api_token
         self.api_token = api_token
         self.model_name = model_name
-        self.generation_params = generation_params
+        self.generation_params = {key : value for key, value in generation_params.items() if key != 'model_name'}
         
-        self.generation_params.pop("model_name")
+
 
     def __repr__(self):
         return f"OpenAIModel(model_name={self.model_name}, generation_params={self.generation_params})"

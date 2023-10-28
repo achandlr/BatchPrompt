@@ -165,14 +165,17 @@ class BatchPromptingExperimentConfig:
     # we specify baseline as a boolean as we might have a batch of size 1 at the end, but it will still
     # use the batched prompt template rather than the baseline prompt template
     k_shot: int
+    batch_size: int
     example_selection: ExampleSelectionType 
     example_question_format: EXAMPLE_FORMAT_FUNCTION_TYPE
     example_answer_format: EXAMPLE_FORMAT_FUNCTION_TYPE
-    batch_size: int
     # Note that this will include the api model name whereas model_name will be less formal like GPT-3.5 vs LLama-2-70B, etc.
     model_api: ModelAPIType
     generation_params: GENERATION_PARAMETERS_TYPE
     debug : Optional[BatchPromptingDebugConfig] = None
+    pre_question_instructions: Optional[str] = None
+    prompt_format: Optional[Callable[[Dict[str, str]], str]] = None
+    is_baseline: bool = False
     random_seed: int = 0
 
 # datasets = ['GSM8K', 'MBPP', 'glue-RTE', 'glue-MNLI']
@@ -199,12 +202,15 @@ class BatchPromptExperiment:
             examples=self.examples,
             dataset=self.config.questions_dataset_config.dataset,
             task_description=self.config.task_description,
+            pre_question_instructions=self.config.pre_question_instructions,
             num_questions=self.config.batch_size,
             num_examples=self.config.k_shot,
             example_question_format=self.config.example_question_format,
             example_answer_format=self.config.example_answer_format,
+            prompt_format=self.config.prompt_format,
             example_selection=self.config.example_selection,
             debug=self.debug,
+            is_baseline=self.config.is_baseline,
         )
         self.model = self.load_language_model(
             model_api=self.config.model_api, 
@@ -368,22 +374,31 @@ class BatchPromptTemplate:
             examples: Dataset,
             dataset: DatasetType,
             task_description: str,
+            pre_question_instructions: str,
             num_questions: int,
             num_examples: int,
+            is_baseline: bool,
             # the optional int is the index of the example in the batch, none if baseline
             example_question_format: Callable[[Dict[str, Any], Optional[int]], str],
             example_answer_format: Callable[[Dict[str, Any], Optional[int]], str],
             example_selection: ExampleSelectionType,
             debug: Optional[BatchPromptingDebugConfig] = None,
+            prompt_format: Optional[Callable[[Dict[str, str]], str]] = None,
     ):
         self.examples = examples
         self.dataset = dataset
         self.task_description = task_description
+        self.pre_question_instructions = pre_question_instructions
         self.num_questions = num_questions
         self.num_examples = num_examples
         self.example_question_format = example_question_format
         self.example_answer_format = example_answer_format
+        self.prompt_format = prompt_format
         self.example_selection = example_selection
+        self.is_baseline = is_baseline
+
+        if self.is_baseline:
+            assert(self.num_questions == 1)
 
         match self.example_selection:
             case ExampleSelectionType.RANDOM:
@@ -460,19 +475,40 @@ class BatchPromptTemplate:
         "One-Shot": "Consider the following example and maintain its formatting."
         TODO Rohan:  add an extra sentence so that the LLM knows the answers to the example questions are answers to the example questions ex: Response to examples in Batch for Few-Shot
         # TODO: Rohan add an extra sentence so that the LLM knows the following are the actual questions to answer: #Questions in Batch to answer
-        '''
-        # TODO     
-        prompt = "\n".join(
-            [
-                # TODO: Should the spacing between description and examples and questions be user-defined/programmable?
-                self.task_description,
-                "",
-                *example_questions,
-                *example_answers,
-                "",
-                *questions,
-            ]
-        )
+        ''' 
+        
+
+        if self.prompt_format is not None:
+            fields = {
+                'task_description' : self.task_description,
+                'example_questions' : example_questions,
+                'example_answers' : example_answers,
+                'pre_questions_instructions' : self.pre_question_instructions,
+                'questions' : questions,
+            }
+            prompt = self.prompt_format(fields)
+        else:
+            if self.is_baseline:
+                examples = [
+                    item 
+                    for pair in zip(example_questions, example_answers) 
+                    for item in pair
+                ]
+            else:
+                examples = [
+                    *example_questions,
+                    *example_answers,
+                ]
+            # will be empty and provide nothing to the prompt if pre_questions_instructions is None
+            pre_questions_instructions = [self.pre_question_instructions] if self.pre_question_instructions is not None else []
+            prompt = "\n".join(
+                [
+                    self.task_description,
+                    *examples,
+                    *pre_questions_instructions,
+                    *questions,
+                ]
+            )
         return prompt
 
 
@@ -481,7 +517,9 @@ if __name__ == "__main__":
     
     # from data.parsing_functions import *
     example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
-    example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
+    example_answer_format = lambda example, i: f"Answer[{i}]: {example['label']}"
+    example_question_format_baseline = lambda example, i: f"Premise: {example['sentence1']}\nHypothesis: {example['sentence2']}"
+    example_answer_format_baseline = lambda example, i: f"Answer: {example['label']}"
 
     oai_gen_params = OpenAIGenerationParameters(
             model_name='gpt-3.5-turbo',
@@ -597,15 +635,17 @@ if __name__ == "__main__":
     config = BatchPromptingExperimentConfig(
         questions_dataset_config=questions_config_rte,
         examples_dataset_config=examples_config_rte,
-        task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
+        task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.\n',
+        pre_question_instructions="Consider the following examples and maintain their formatting.\n",
         k_shot=7,
         example_selection=ExampleSelectionType.RANDOM,
-        example_question_format=example_question_format,
-        example_answer_format=example_answer_format,
-        batch_size=4,
+        example_question_format=example_question_format_baseline,
+        example_answer_format=example_answer_format_baseline,
+        batch_size=1,
         model_api=ModelAPIType.OPEN_AI,
         generation_params=oai_gen_params,
         random_seed=0,
+        is_baseline=True,
         debug=BatchPromptingDebugConfig(
             truncate_examples=True,
             truncate_batch_queries=True,
