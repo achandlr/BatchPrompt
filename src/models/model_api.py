@@ -20,8 +20,7 @@ class OpenAIGenerationParameters(TypedDict):
     max_tokens: int
     frequency_penalty: float
 
-@dataclass
-class DebugGenerationParameters:
+class DebugGenerationParameters(TypedDict):
     pass
 
 def read_api_token(token_path : str) -> str:

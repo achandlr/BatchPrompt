@@ -365,6 +365,13 @@ if __name__ == "__main__":
     #     random_seed=0,
     # )
 
+    oai_gen_params = OpenAIGenerationParameters(
+            model_name='gpt-3.5-turbo',
+            temperature=0.6,
+            max_tokens=64,
+            frequency_penalty=1.0,
+        )
+
     config = BatchPromptingExperimentConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
@@ -378,15 +385,10 @@ if __name__ == "__main__":
         example_answer_format=example_answer_format,
         batch_size=4,
         model_api=ModelAPIType.OPEN_AI,
-        generation_params=OpenAIGenerationParameters(
-            model_name='gpt-3.5-turbo',
-            temperature=0.6,
-            max_tokens=64,
-            frequency_penalty=1.0,
-        ),
+        generation_params=oai_gen_params,
         random_seed=0,
     )
 
     experiment = BatchPromptExperiment(config)
-    experiment.execute()
+    # experiment.execute()
     print("DONE")
