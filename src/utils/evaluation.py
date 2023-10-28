@@ -106,34 +106,34 @@ class CodeEvaluator:
 import re
 from typing import List
 
-def extract_answers_batch(output_str: str, answer_type = None) -> List[int]:
-    # Initialize an empty list to store the extracted answers.
-    answers = []
+# def extract_answers_batch(output_str: str, answer_type = None) -> List[int]:
+#     # Initialize an empty list to store the extracted answers.
+#     answers = []
     
-    # Step 1: Split the string by newlines to process each line individually.
-    lines = output_str.strip().split("\n")
+#     # Step 1: Split the string by newlines to process each line individually.
+#     lines = output_str.strip().split("\n")
     
-    # Primary regex pattern to extract number after ": ".
-    primary_pattern = r": (\d+)"
+#     # Primary regex pattern to extract number after ": ".
+#     primary_pattern = r": (\d+)"
     
-    # Backup regex pattern to extract any number in the line.
-    backup_pattern = r"(\d+)"
+#     # Backup regex pattern to extract any number in the line.
+#     backup_pattern = r"(\d+)"
     
-    if answer_type == "commonsense":
-        raise None
-    # Step 2: Loop through each line to extract the answer.
-    for line in lines:
-        # Try primary regex pattern first.
-        match = re.search(primary_pattern, line)
-        if match:
-            answers.append(int(match.group(1)))
-        else:
-            # If primary fails, try the backup pattern.
-            match = re.search(backup_pattern, line)
-            if match:
-                answers.append(int(match.group(1)))
+#     if answer_type == "commonsense":
+#         raise None
+#     # Step 2: Loop through each line to extract the answer.
+#     for line in lines:
+#         # Try primary regex pattern first.
+#         match = re.search(primary_pattern, line)
+#         if match:
+#             answers.append(int(match.group(1)))
+#         else:
+#             # If primary fails, try the backup pattern.
+#             match = re.search(backup_pattern, line)
+#             if match:
+#                 answers.append(int(match.group(1)))
 
-    return answers
+#     return answers
 
 
 

@@ -1,9 +1,25 @@
 from src.experiments.k_shot_experiment import *
 from src.utils.parsing_functions import * 
 
+oai_gen_params = OpenAIGenerationParameters(
+            model_name='gpt-3.5-turbo',
+            temperature=0.6,
+            max_tokens=64,
+            frequency_penalty=1.0,
+        )
+
+questions_config_rte = DatasetConfig(
+    dataset=DatasetType.RTE,
+    hf_dataset_path=['glue', 'rte'],
+    split_name='validation',
+)
+examples_config_rte = DatasetConfig(
+    dataset=DatasetType.RTE,
+    hf_dataset_path=['glue', 'rte'],
+    split_name='train',
+)
 task_description_rte = 'Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.'
-example_question_format_rte = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
-example_answer_format_rte = lambda example, i: f"A[{i}]: {example['label']}"
+
 
 questions_config_GSM8K = DatasetConfig(
     dataset=DatasetType.GSM8K,
@@ -78,11 +94,10 @@ task_description_COMMON_SENSE = '''You are tasked with answering multiple-choice
 
 
 
-config_param_list = [
-    [questions_config_rte, examples_config_rte, task_description_rte, rte_question_format, rte_answer_format],
-    [questions_config_GSM8K, examples_config_GSM8K, task_description_GSM8K, gsm8k_question_format, gsm8k_answer_format],
-    # [questions_config_MBPP, examples_config_MBPP, task_description_MBPP, mbpp_question_format, mbpp_answer_format],
-    [questions_config_MNLI, examples_config_MNLI, task_description_MNLI, mnli_question_format, mnli_answer_format],
-    # [questions_config_GSM8K_HARD, examples_config_GSM8K_HARD, task_description_GSM8K_HARD, gsm8k_question_format, gsm8k_answer_format],
-    # [questions_config_COMMON_SENSE, examples_config_COMMON_SENSE, task_description_COMMON_SENSE, commonsense_question_format, commonsense_answer_format] 
-    ]
+config_param_list = { "rte": [questions_config_rte, examples_config_rte, task_description_rte, rte_question_format, rte_answer_format],
+    "GSM8K": [questions_config_GSM8K, examples_config_GSM8K, task_description_GSM8K, gsm8k_question_format, gsm8k_answer_format],
+    # "MBPP": [questions_config_MBPP, examples_config_MBPP, task_description_MBPP, mbpp_question_format, mbpp_answer_format],
+    "MNLI": [questions_config_MNLI, examples_config_MNLI, task_description_MNLI, mnli_question_format, mnli_answer_format],
+    #"GSM8K_HARD": [questions_config_GSM8K_HARD, examples_config_GSM8K_HARD, task_description_GSM8K_HARD, gsm8k_question_format, gsm8k_answer_format],
+    #"COMMON_SENSE": [questions_config_COMMON_SENSE, examples_config_COMMON_SENSE, task_description_COMMON_SENSE, commonsense_question_format, commonsense_answer_format] 
+}

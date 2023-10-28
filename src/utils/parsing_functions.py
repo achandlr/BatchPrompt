@@ -1,5 +1,8 @@
 from src.utils.dataset_loader import extract_function_name
 from data.generated.mbpp_CoT import step_by_step_thinking
+import re
+from typing import List
+
 
 def gsm8k_question_format(example, i):
     example_question_format = f"Q[{i}]: {example['question']}"
@@ -102,7 +105,7 @@ def rte_question_format(example, i):
     return f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
 
 def rte_answer_format(example, i):
-    return f"Answer[{i}]: {example['label']}"
+    return f"A[{i}]: {example['label']}"
 # TODO: add rte CoT
 
 #TODO: Add mnli CoT
