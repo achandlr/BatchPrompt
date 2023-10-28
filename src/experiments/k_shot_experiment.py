@@ -34,6 +34,10 @@ GENERATION_PARAMETERS_TYPE = Union[
 ]
 
 class DatasetType(Enum):
+    GSM8K_HARD = auto()
+    GSM8K_HARD_CoT = auto()
+    COMMON_SENSE = auto()
+    COMMON_SENSE_CoT = auto()
     GSM8K = auto()
     MBPP = auto()
     RTE = auto()
@@ -46,6 +50,11 @@ class ModelAPIType(Enum):
 
 # DICTS
 DATASET_ID_KEYS = {
+    # TODO: Verify what these do and fi they are correct
+    DatasetType.GSM8K_HARD_CoT : ['idx'],
+    DatasetType.GSM8K_HARD : ['idx'],
+    DatasetType.COMMON_SENSE : ['idx'],
+    DatasetType.COMMON_SENSE_CoT : ['idx'],
     DatasetType.GSM8K : ['idx'],
     DatasetType.MBPP : ['task_id'],
     DatasetType.RTE : ['idx'],
@@ -53,13 +62,23 @@ DATASET_ID_KEYS = {
 }
 
 DATASET_INPUT_KEYS = {
+    # TODO: Verify
+    DatasetType.GSM8K_HARD_CoT : ['question'],
+    DatasetType.GSM8K_HARD : ['input'],
+    DatasetType.COMMON_SENSE : ['question','choices'],
+    DatasetType.COMMON_SENSE_CoT : ['source'],
     DatasetType.GSM8K : ['question'],
-    DatasetType.MBPP : ['text'],
+    DatasetType.MBPP : ['text','test_list'],
     DatasetType.RTE : ['sentence1', 'sentence2'],
     DatasetType.MNLI : ['premise', 'hypothesis'],
 }
 
 DATASET_LABEL_KEYS = {
+    # TODO: Verify
+    DatasetType.GSM8K_HARD_CoT : ['answer'],
+    DatasetType.GSM8K_HARD : ['target'],
+    DatasetType.COMMON_SENSE : ['answerKey'],
+    DatasetType.COMMON_SENSE_CoT : ['rationale', 'target'],
     DatasetType.GSM8K : ['answer'],
     DatasetType.MBPP : ['code', 'test_list', 'test_setup_code', 'challenge_test_list'],
     DatasetType.RTE : ['label'],
@@ -69,6 +88,10 @@ DATASET_LABEL_KEYS = {
 # these are the texts that go before the Q[i] in batch prompts
 # currently unused
 DATASET_BATCH_INDEX_Q = {
+    DatasetType.GSM8K_HARD_CoT : ['Q'],
+    DatasetType.GSM8K_HARD : ['Q'],
+    DatasetType.COMMON_SENSE : ['Q'],
+    DatasetType.COMMON_SENSE_CoT : ['Q'],
     DatasetType.GSM8K : ['Q'],
     DatasetType.MBPP : ['Q'],
     DatasetType.RTE : ['Premise', 'Hypothesis'],
@@ -78,10 +101,14 @@ DATASET_BATCH_INDEX_Q = {
 # these are the texts that go before the Q[i] in batch prompts
 # currently unused
 DATASET_BATCH_INDEX_A = {
+    DatasetType.GSM8K_HARD_CoT : ['A'],
+    DatasetType.GSM8K_HARD : ['A'],
+    DatasetType.COMMON_SENSE : ['A'],
+    DatasetType.COMMON_SENSE_CoT : ['A'],
     DatasetType.GSM8K : ['A'],
     DatasetType.MBPP : ['A'],
-    DatasetType.RTE : ['Answer'],
-    DatasetType.MNLI : ['Answer'],
+    DatasetType.RTE : ['A'],
+    DatasetType.MNLI : ['A'],
 }
 
 class ExampleSelectionType(Enum):
@@ -237,13 +264,13 @@ class BatchPromptExperiment:
         ]
         return batched_results
 
-    def batch_questions(self) -> List[Tuple[List[ID_TYPE], Dict[str, Any]]]:
+    def batch_questions(self) -> List[Tuple[List[ID_TYPE], List[Dict[str, Any]]]]:
 
         batched_dataset : List[Dict[str, List[Any]]] = [   
             self.questions[i:i+self.config.batch_size]
             for i in range(0, len(self.questions), self.config.batch_size)
         ]
-        batched_questions : List[Tuple[List[ID_TYPE], Dict[str, Any]]] = []
+        batched_questions : List[Tuple[List[ID_TYPE], List[Dict[str, Any]]]] = []
         for batch in batched_dataset:
             ids = batch[DATASET_ID_KEYS[self.config.questions_dataset_config.dataset][0]]
             questions = [
@@ -253,19 +280,29 @@ class BatchPromptExperiment:
             batched_questions.append((ids, questions))
 
         return batched_questions
+    
+    def answers_from_batched_questions(
+        self, 
+        batched_questions: List[Tuple[List[ID_TYPE], List[Dict[str, Any]]]]
+    ) -> Dict[ID_TYPE, Dict[str, Any]]:
+        answers :  Dict[ID_TYPE, Dict[str, Any]] = {
+            question_id : question
+            for (ids, questions) in batched_questions
+            for (question_id, question) in zip(ids, questions)
+        }
+        return answers
 
-    def execute(self) -> Dict[int, str]:
+
+    def execute(self) -> Tuple[List[Tuple[List[ID_TYPE], str]], Dict[ID_TYPE, Dict[str, Any]]]:
         """
         TODO:
         X Load Dataset
         X Generate set of model inputs (using dataset + config + FlexiblePromptTemplate)
         X query model for each input (save raw outputs to a file somewhere)
-        - parse out answer from model response
         """
         # splits self.questions into batches that are lists of individual dictionaries along with their ids
-        batched_questions: List[Dict[str, List[Any]]] = self.batch_questions()
-
-        batched_questions = batched_questions
+        batched_questions: List[Tuple[List[ID_TYPE], List[Dict[str, Any]]]] = self.batch_questions()
+        answers_dict = self.answers_from_batched_questions(batched_questions)
 
         # generate prompts for each batch
         batched_model_inputs : List[Tuple[List[ID_TYPE], str]] = [
@@ -276,10 +313,18 @@ class BatchPromptExperiment:
         batched_model_inputs = batched_model_inputs
         # TODO: igure out how to also save the config
         # which includes a lambda/function that might be tricky to pickle
-        print("Dumping batched model inputs to file...")
-        pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        batched_model_outputs = self.batch_query_model(batched_model_inputs)
+
+        return (batched_model_outputs, answers_dict)
+        # TODO: Alex, move this logic to a separate file
+        # pred = []
+        # for batched_output in batched_model_outputs:
+        #     batched_output_parsed = extract_answers_batch(batched_output)
+        #     assert len(batched_output_parsed) == len(batched_model_inputs)
+        #     pred.extend(batched_output_parsed)
+        # evaluator = Evaluation()
+        # stats = evaluator.get_stats(y_pred=pred, y_true=ground_truth_answers, answer_type = answer_types[i])
         # # save the pickled batched model outputs to file
         # print("Dumping batched model outputs to file...")
         # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
@@ -366,9 +411,10 @@ class BatchPromptTemplate:
                 b = len(top_k_examples_per_question)
                 # take the first k examples, one from each question looping if necessary
                 batch_examples = [
-                    top_k_examples_per_question[i // b][i % b]
+                    top_k_examples_per_question[i % b][i // b]
                     for i in range(self.num_examples)
                 ]
+                assert self.num_examples == len(batch_examples)
                 return batch_examples
 
     # TODO: How to distinguish between baseline and batch size of 1 (baseline shouldn't have [i] in the prompt)
@@ -387,6 +433,14 @@ class BatchPromptTemplate:
         for i, question in enumerate(batch):
             questions.append(self.example_question_format(question, i))
         
+        '''TODO Rohan:  add an extra sentence so that the LLM knows the following are examplesdefault_shot_types = {
+        "Zero-Shot": "",
+        "Few-Shot": "Consider the following examples and maintain their formatting.\n",
+        "One-Shot": "Consider the following example and maintain its formatting."
+        TODO Rohan:  add an extra sentence so that the LLM knows the answers to the example questions are answers to the example questions ex: Response to examples in Batch for Few-Shot
+        # TODO: Rohan add an extra sentence so that the LLM knows the following are the actual questions to answer: #Questions in Batch to answer
+        '''
+        # TODO     
         prompt = "\n".join(
             [
                 # TODO: Should the spacing between description and examples and questions be user-defined/programmable?
@@ -404,6 +458,7 @@ class BatchPromptTemplate:
 
 if __name__ == "__main__":
     
+    # from data.parsing_functions import *
     example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
     example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
 
@@ -414,25 +469,116 @@ if __name__ == "__main__":
             frequency_penalty=1.0,
         )
 
-    questions_config = DatasetConfig(
+
+
+
+    questions_config_rte = DatasetConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
         split_name='validation',
     )
-
-    examples_config = DatasetConfig(
+    examples_config_rte = DatasetConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
         split_name='train',
     )
+    task_description_rte = 'Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.'
+    # example_question_format_rte = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
+    # example_answer_format_rte = lambda example, i: f"A[{i}]: {example['label']}"
+
+    # TODO: Alex, move these configs to a separate file
+    # questions_config_GSM8K = DatasetConfig(
+    #     dataset=DatasetType.GSM8K,
+    #     hf_dataset_path=['gsm8k', 'main'],
+    #     split_name='test',
+    # )
+    # examples_config_GSM8K = DatasetConfig(
+    #     dataset=DatasetType.GSM8K,
+    #     hf_dataset_path=['gsm8k', 'main'],
+    #     split_name='train',
+    # )
+    # task_description_GSM8K = '''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.'''
+
+    # '''
+    # # TODO: Rohan: Can you split reasoning-machines/gsm-hard[train] into a train test split?  
+    # We only have train in gsm-hard so we need to split both. The following below is commented out because sampling is done from the same place.
+    # '''
+    # questions_config_GSM8K_HARD = DatasetConfig(
+    #     dataset=DatasetType.GSM8K_HARD,
+    #     hf_dataset_path=["reasoning-machines/gsm-hard"],
+    #     split_name='train',
+    # )
+    # examples_config_GSM8K_HARD = DatasetConfig(
+    #     dataset=DatasetType.GSM8K_HARD,
+    #     hf_dataset_path=["reasoning-machines/gsm-hard"],
+    #     split_name='train',
+    # )
+    # task_description_GSM8K_HARD = '''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.'''
 
 
+
+    # questions_config_MBPP = DatasetConfig(
+    #     dataset=DatasetType.MBPP,
+    #     hf_dataset_path=['mbpp'],
+    #     split_name='validation',
+    # )
+    # examples_config_MBPP = DatasetConfig(
+    #     dataset=DatasetType.MBPP,
+    #     hf_dataset_path=['mbpp'],
+    #     split_name='train',
+    # )
+    # task_description_MBPP = '''You are tasked with solving Python programming problems that are designed to be solvable by entry-level programmers. Each problem will consist of a task description, and your job is to output a string that when parsed is an executable Python code function that fulfills the requirements of the task. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format.'''
+
+
+
+    # questions_config_MNLI = DatasetConfig(
+    #     dataset=DatasetType.MNLI,
+    #     hf_dataset_path=['glue', 'mnli'],
+    #     split_name='validation_matched',
+    # )
+    # examples_config_MNLI = DatasetConfig(
+    #     dataset=DatasetType.MNLI,
+    #     hf_dataset_path=['glue', 'mnli'],
+    #     split_name='train',
+    # )
+    # task_description_MNLI = '''You are tasked with the job of Multi-Genre Natural Language Inference (MNLI). For each task, you will be given a premise sentence and a hypothesis sentence. Your job is to predict the relationship between the premise and the hypothesis, classifying each pair as either 'entailment', 'contradiction', or 'neutral'. Instruction: For each question in the batch, provide a single answer, following the format A[idx]: answer. Output only the answers with the associated index in "A[idx]: answer" format. Each answer should be only one of the following: 'entailment', 'contradiction', or 'neutral'. So in other words, for each question, you should output one of the following: A[idx]: entailment, A[idx]: contradiction, or A[idx]: neutral.'''
+
+
+
+    # questions_config_COMMON_SENSE = DatasetConfig(
+    #     dataset=DatasetType.COMMON_SENSE,
+    #     hf_dataset_path=['commonsense_qa'],
+    #     split_name='validation',
+    # )
+    # examples_config_COMMON_SENSE = DatasetConfig(
+    #     dataset=DatasetType.COMMON_SENSE,
+    #     hf_dataset_path=['commonsense_qa'],
+    #     split_name='train',
+    # )
+    # task_description_COMMON_SENSE = '''You are tasked with answering multiple-choice questions that require both contextual understanding and general world knowledge. Each question will have five options labeled 'a', 'b', 'c', 'd', and 'e'. Your job is to select the most appropriate answer by outputting the letter corresponding to that option. " These questions are part of the CommonsenseQA dataset, designed to test your ability to answer questions that often require prior knowledge. Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format. '''
+
+
+
+
+
+
+    # config_param_list = [
+    #     [questions_config_rte, examples_config_rte, task_description_rte, rte_question_format, rte_answer_format],
+    #     [questions_config_GSM8K, examples_config_GSM8K, task_description_GSM8K, gsm8k_question_format, gsm8k_answer_format],
+    #     # [questions_config_MBPP, examples_config_MBPP, task_description_MBPP, mbpp_question_format, mbpp_answer_format],
+    #     [questions_config_MNLI, examples_config_MNLI, task_description_MNLI, mnli_question_format, mnli_answer_format],
+    #     # [questions_config_GSM8K_HARD, examples_config_GSM8K_HARD, task_description_GSM8K_HARD, gsm8k_question_format, gsm8k_answer_format],
+    #     # [questions_config_COMMON_SENSE, examples_config_COMMON_SENSE, task_description_COMMON_SENSE, commonsense_question_format, commonsense_answer_format] 
+    #     ]
+
+    # stats = []
+    # for questions_config, examples_config, task_description in config_param_list:
     config = BatchPromptingExperimentConfig(
-        questions_dataset_config=questions_config,
-        examples_dataset_config=examples_config,
+        questions_dataset_config=questions_config_rte,
+        examples_dataset_config=examples_config_rte,
         task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
         k_shot=7,
-        example_selection=ExampleSelectionType.MAX_MARGINAL_RELEVANCE,
+        example_selection=ExampleSelectionType.RANDOM,
         example_question_format=example_question_format,
         example_answer_format=example_answer_format,
         batch_size=4,
@@ -440,10 +586,9 @@ if __name__ == "__main__":
         generation_params=oai_gen_params,
         random_seed=0,
     )
-
     experiment = BatchPromptExperiment(config)
     experiment.execute()
-    print("DONE")
+
 
 
 # Other testing graveyard
