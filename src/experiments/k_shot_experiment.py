@@ -330,7 +330,7 @@ class BatchPromptExperiment:
                 pickle.dump((batched_model_outputs), open(self.debug.save_batched_model_outputs, 'wb'))
 
 
-        return (batched_model_outputs, answers_dict)
+        return (batched_model_inputs, batched_model_outputs, answers_dict)
         # TODO: Alex, move this logic to a separate file
         # pred = []
         # for batched_output in batched_model_outputs:
