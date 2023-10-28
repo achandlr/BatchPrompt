@@ -216,7 +216,7 @@ class BatchPromptExperiment:
         # splits self.questions into batches that are lists of individual dictionaries along with their ids
         batched_questions: List[Dict[str, List[Any]]] = self.batch_questions()
 
-        batched_questions = batched_questions[:10]
+        batched_questions = batched_questions
 
         # generate prompts for each batch
         batched_model_inputs : List[Tuple[List[ID_TYPE], str]] = [
@@ -224,16 +224,16 @@ class BatchPromptExperiment:
             for (ids, batch) in batched_questions
         ]
         # for debug purposes
-        batched_model_inputs = batched_model_inputs[:10]
+        batched_model_inputs = batched_model_inputs
         # TODO: igure out how to also save the config
         # which includes a lambda/function that might be tricky to pickle
         print("Dumping batched model inputs to file...")
         pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
-        # # save the pickled batched model outputs to file
-        # print("Dumping batched model outputs to file...")
-        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
+        batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        # save the pickled batched model outputs to file
+        print("Dumping batched model outputs to file...")
+        pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -291,7 +291,7 @@ class BatchPromptTemplate:
                 print("Initializing Semantic Example Selector...")
                 self.example_selector = selector_class.from_examples(
                     # Need to turn hf dataset into a list of dicts
-                    examples=list(self.examples)[:20],
+                    examples=list(self.examples),
                     # TODO: do we want embeddings to be configurable? probably not... it has sensible defaults
                     # and it is certainly not a menaingful variable in our experiments
                     embeddings=HuggingFaceEmbeddings(),
