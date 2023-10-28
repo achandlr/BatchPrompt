@@ -4,6 +4,7 @@ import together
 import backoff
 from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, TypedDict, Optional
+from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 class TogetherAIGenerationParameters(TypedDict):
@@ -167,14 +168,14 @@ def query_model(model, prompt, model_temperature=.2, timeout=10):
                 try_cnt += 1
 if __name__ == "__main__":
     model = OpenAIModel(
-        api_token=read_api_token("data//imported//datasets//api_token.txt"),
+        api_token=read_api_token(Path("data/imported/open_ai_token.txt")),
         model_name="gpt-3.5-turbo",
-        generation_params={"temperature" : .2} # TODO: Not sure if temperature will work as input as string
+        generation_params={"temperature" : 0.2} # TODO: Not sure if temperature will work as input as string
     )
     output = model.query("What is the meaning of life?")
     print("DONE")
     # model = TogetherAIModel(
-    #     api_token=read_api_token("RJHA_TOGETHER_AI_TOKEN.txt"),
+    #     api_token=read_api_token(Path("data/imported/together_ai_token.txt")),
     #     model_name="togethercomputer/llama-2-7b",
     #     generation_params={}
     # )

@@ -15,6 +15,7 @@ from datasets import load_dataset, Dataset
 from typing import Callable, List, Dict, Any, Tuple, Union, Optional, TypedDict
 from enum import Enum, auto
 from tqdm import tqdm
+from pathlib import Path
 
 from langchain.prompts.example_selector.semantic_similarity import (
     MaxMarginalRelevanceExampleSelector,
@@ -66,6 +67,7 @@ DATASET_LABEL_KEYS = {
 }
 
 # these are the texts that go before the Q[i] in batch prompts
+# currently unused
 DATASET_BATCH_INDEX_Q = {
     DatasetType.GSM8K : ['Q'],
     DatasetType.MBPP : ['Q'],
@@ -74,6 +76,7 @@ DATASET_BATCH_INDEX_Q = {
 }
 
 # these are the texts that go before the Q[i] in batch prompts
+# currently unused
 DATASET_BATCH_INDEX_A = {
     DatasetType.GSM8K : ['A'],
     DatasetType.MBPP : ['A'],
@@ -147,7 +150,7 @@ class BatchPromptExperiment:
     def load_language_model(self) -> LanguageModel:
         match self.config.model_api:
             case ModelAPIType.OPEN_AI:
-                token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/OPEN_AI_TOKEN.txt')
+                token = read_api_token(Path("data/imported/open_ai_token.txt"))
                 model = OpenAIModel(
                     api_token=token,
                     model_name=self.config.generation_params['model_name'],
@@ -155,7 +158,7 @@ class BatchPromptExperiment:
                 )
             case ModelAPIType.TOGETHER_AI:
                 # together.ai
-                token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/TOGETHER_AI_TOKEN.txt')
+                token = read_api_token(Path("data/imported/together_ai_token.txt"))
                 model = TogetherAIModel(
                     api_token=token,
                     model_name=self.config.generation_params.model_name,
@@ -205,9 +208,9 @@ class BatchPromptExperiment:
     def execute(self) -> Dict[int, str]:
         """
         TODO:
-        - Load Dataset
-        - Generate set of model inputs (using dataset + config + FlexiblePromptTemplate)
-        - query model for each input (save raw outputs to a file somewhere)
+        X Load Dataset
+        X Generate set of model inputs (using dataset + config + FlexiblePromptTemplate)
+        X query model for each input (save raw outputs to a file somewhere)
         - parse out answer from model response
         """
         # splits self.questions into batches that are lists of individual dictionaries along with their ids
@@ -222,14 +225,15 @@ class BatchPromptExperiment:
         ]
         # for debug purposes
         batched_model_inputs = batched_model_inputs[:10]
-        # TODO: igure out how to also save the config, which includes a lambda/function that might be tricky to pickle
+        # TODO: igure out how to also save the config
+        # which includes a lambda/function that might be tricky to pickle
         print("Dumping batched model inputs to file...")
         pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-        batched_model_outputs = self.batch_query_model(batched_model_inputs)
-        # # # save the pickled batched model outputs to file
-        print("Dumping batched model outputs to file...")
-        pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
+        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        # # save the pickled batched model outputs to file
+        # print("Dumping batched model outputs to file...")
+        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -284,10 +288,10 @@ class BatchPromptTemplate:
                     ExampleSelectionType.SEMANTIC: SemanticSimilarityExampleSelector,
                     ExampleSelectionType.MAX_MARGINAL_RELEVANCE: MaxMarginalRelevanceExampleSelector,
                 }[self.example_selection]
-
-                self.examples_selector = selector_class.from_examples(
+                print("Initializing Semantic Example Selector...")
+                self.example_selector = selector_class.from_examples(
                     # Need to turn hf dataset into a list of dicts
-                    examples=list(self.examples),
+                    examples=list(self.examples)[:20],
                     # TODO: do we want embeddings to be configurable? probably not... it has sensible defaults
                     # and it is certainly not a menaingful variable in our experiments
                     embeddings=HuggingFaceEmbeddings(),
@@ -295,18 +299,33 @@ class BatchPromptTemplate:
                     k=self.num_examples,
                     input_keys=DATASET_INPUT_KEYS[self.dataset],
                 )
+                print("Done initializing Semantic Example Selector...")
 
     def get_examples(self, batch: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        # batch is a list of dataset instances that will have the same keys as the dataset
         match self.example_selection:
             case ExampleSelectionType.RANDOM:
                 return [self.examples[i] for i in random.sample(range(len(self.examples)), self.num_examples)] 
             case ExampleSelectionType.LEXICAL:
                 raise NotImplementedError("Lexical example selection is not yet implemented")
             case ExampleSelectionType.SEMANTIC | ExampleSelectionType.MAX_MARGINAL_RELEVANCE:
-                raise NotImplementedError("TODO: decide how to handle semantic example retrieval for batches of examples")
+                top_k_examples_per_question = [
+                    self.example_selector.select_examples(question)
+                    for question in batch
+                ]
+                # num questions
+                # note that we don't use self.num_questions because the batch could 
+                # be smaller than that if it's the last batch
+                b = len(top_k_examples_per_question)
+                # take the first k examples, one from each question looping if necessary
+                batch_examples = [
+                    top_k_examples_per_question[i // b][i % b]
+                    for i in range(self.num_examples)
+                ]
+                return batch_examples
 
     # TODO: How to distinguish between baseline and batch size of 1 (baseline shouldn't have [i] in the prompt)
-    # Resolved - pass is_baseline
+    # Resolved - ignore i in format function if baseline
     def generate_prompt(self, batch: List[Dict[str, Any]]) -> str:
         example_questions = []
         example_answers = []
@@ -315,8 +334,8 @@ class BatchPromptTemplate:
         examples = self.get_examples(batch)
         for i, example in enumerate(examples):
             # the format functions take care of the Q[i] notation
-            example_questions.append(self.example_question_format(example, None if self.is_baseline else i))
-            example_answers.append(self.example_answer_format(example, None if self.is_baseline else i))
+            example_questions.append(self.example_question_format(example, i))
+            example_answers.append(self.example_answer_format(example, i))
         
         for i, question in enumerate(batch):
             questions.append(self.example_question_format(question, None if self.is_baseline else i))
@@ -341,30 +360,6 @@ if __name__ == "__main__":
     example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
     example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
 
-    # config = BatchPromptingExperimentConfig(
-    #     dataset=DatasetType.RTE,
-    #     hf_dataset_path=['glue', 'rte'],
-    #     examples_split_name='train',
-    #     evaluation_split_name='validation',
-    #     task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
-    #     k_shot=3,
-    #     is_baseline=False,
-    #     example_selection=ExampleSelectionType.RANDOM,
-    #     example_question_format=example_question_format,
-    #     example_answer_format=example_answer_format,
-    #     batch_size=4,
-    #     generation_params=TogetherAIGenerationParameters(
-    #         model_name='togethercomputer/llama-2-7b',
-    #         max_tokens=64,
-    #         temperature=0.7,
-    #         top_p=0.9,
-    #         top_k=0,
-    #         repetition_penalty=1.0,
-    #         logprobs=0,
-    #     ),
-    #     random_seed=0,
-    # )
-
     oai_gen_params = OpenAIGenerationParameters(
             model_name='gpt-3.5-turbo',
             temperature=0.6,
@@ -378,9 +373,9 @@ if __name__ == "__main__":
         examples_split_name='train',
         evaluation_split_name='validation',
         task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
-        k_shot=3,
+        k_shot=7,
         is_baseline=False,
-        example_selection=ExampleSelectionType.RANDOM,
+        example_selection=ExampleSelectionType.MAX_MARGINAL_RELEVANCE,
         example_question_format=example_question_format,
         example_answer_format=example_answer_format,
         batch_size=4,
@@ -390,5 +385,32 @@ if __name__ == "__main__":
     )
 
     experiment = BatchPromptExperiment(config)
-    # experiment.execute()
+    experiment.execute()
     print("DONE")
+
+
+# Other testing graveyard
+
+# config = BatchPromptingExperimentConfig(
+#     dataset=DatasetType.RTE,
+#     hf_dataset_path=['glue', 'rte'],
+#     examples_split_name='train',
+#     evaluation_split_name='validation',
+#     task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
+#     k_shot=3,
+#     is_baseline=False,
+#     example_selection=ExampleSelectionType.RANDOM,
+#     example_question_format=example_question_format,
+#     example_answer_format=example_answer_format,
+#     batch_size=4,
+#     generation_params=TogetherAIGenerationParameters(
+#         model_name='togethercomputer/llama-2-7b',
+#         max_tokens=64,
+#         temperature=0.7,
+#         top_p=0.9,
+#         top_k=0,
+#         repetition_penalty=1.0,
+#         logprobs=0,
+#     ),
+#     random_seed=0,
+# )
