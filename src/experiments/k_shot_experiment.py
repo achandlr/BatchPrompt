@@ -228,7 +228,7 @@ class BatchPromptExperiment:
             )
         # add an index column to gsm8k
         if dataset_config.dataset == DatasetType.GSM8K:
-            dataset = dataset.add_column('idx', list(range(len(self.questions))))
+            dataset = dataset.add_column('idx', list(range(len(dataset))))
         return dataset
     
     def load_language_model(self, model_api, generation_params) -> LanguageModel:
@@ -245,7 +245,7 @@ class BatchPromptExperiment:
                 token = read_api_token(Path("data/imported/together_ai_token.txt"))
                 model = TogetherAIModel(
                     api_token=token,
-                    model_name=generation_params.model_name,
+                    model_name=generation_params['model_name'],
                     generation_params=generation_params
                 )
             case ModelAPIType.DEBUG:
