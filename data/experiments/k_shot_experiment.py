@@ -1,7 +1,5 @@
 import random
 import pickle
-
-from src.utils.dataset_loader import extract_function_name
 from src.models.model_api import (
     read_api_token, 
     LanguageModel, 
@@ -28,17 +26,14 @@ from langchain.embeddings import HuggingFaceEmbeddings
 # TYPES AND ENUMS
 ID_TYPE = Union[str, int]
 EXAMPLE_FORMAT_FUNCTION_TYPE = Callable[[Dict[str, Any], Optional[int]], str]
-
 GENERATION_PARAMETERS_TYPE = Union[
     TogetherAIGenerationParameters, 
     OpenAIGenerationParameters, 
     DebugGenerationParameters,
 ]
 
-#TODO: Rohan add  common sense
 class DatasetType(Enum):
     GSM8K = auto()
-    GSM8K_HARD = auto()
     MBPP = auto()
     RTE = auto()
     MNLI = auto()
@@ -48,8 +43,7 @@ class ModelAPIType(Enum):
     OPEN_AI = auto()
     DEBUG = auto()
 
-
-#TODO: Rohan add GMS8K_HARD and common sense
+# DICTS
 DATASET_ID_KEYS = {
     DatasetType.GSM8K : ['idx'],
     DatasetType.MBPP : ['task_id'],
@@ -57,23 +51,19 @@ DATASET_ID_KEYS = {
     DatasetType.MNLI : ['idx'],
 }
 
-#TODO: Rohan add GMS8K_HARD and common sense
 DATASET_INPUT_KEYS = {
     DatasetType.GSM8K : ['question'],
-    DatasetType.MBPP : ['text', 'test_list'],
+    DatasetType.MBPP : ['text'],
     DatasetType.RTE : ['sentence1', 'sentence2'],
     DatasetType.MNLI : ['premise', 'hypothesis'],
 }
 
-#TODO: Rohan add GMS8K_HARD and common sense
 DATASET_LABEL_KEYS = {
     DatasetType.GSM8K : ['answer'],
     DatasetType.MBPP : ['code', 'test_list', 'test_setup_code', 'challenge_test_list'],
     DatasetType.RTE : ['label'],
     DatasetType.MNLI : ['label'],
 }
-
-#TODO: Rohan add GMS8K_HARD and common sense
 
 # these are the texts that go before the Q[i] in batch prompts
 DATASET_BATCH_INDEX_Q = {
@@ -83,7 +73,6 @@ DATASET_BATCH_INDEX_Q = {
     DatasetType.MNLI : ['Premise', 'Hypothesis'],
 }
 
-#TODO: Rohan add GMS8K_HARD and common sense
 # these are the texts that go before the Q[i] in batch prompts
 DATASET_BATCH_INDEX_A = {
     DatasetType.GSM8K : ['A'],
@@ -116,11 +105,8 @@ class BatchPromptingExperimentConfig:
     example_answer_format: EXAMPLE_FORMAT_FUNCTION_TYPE
     batch_size: int
     # Note that this will include the api model name whereas model_name will be less formal like GPT-3.5 vs LLama-2-70B, etc.
-    
     model_api: ModelAPIType
     generation_params: GENERATION_PARAMETERS_TYPE
-
-    # generation_params: Union[TogetherAIGenerationParameters, OpenAIGenerationParameters]
     random_seed: int = 0
 
 # datasets = ['GSM8K', 'MBPP', 'glue-RTE', 'glue-MNLI']
@@ -161,18 +147,18 @@ class BatchPromptExperiment:
     def load_language_model(self) -> LanguageModel:
         match self.config.model_api:
             case ModelAPIType.OPEN_AI:
-                token = read_api_token(r'data/imported/api_token.txt')
+                token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/OPEN_AI_TOKEN.txt')
                 model = OpenAIModel(
                     api_token=token,
-                    model_name=self.config.generation_params["model_name"],
+                    model_name=self.config.generation_params['model_name'],
                     generation_params=self.config.generation_params
                 )
             case ModelAPIType.TOGETHER_AI:
                 # together.ai
-                token =  read_api_token(r'data\imported\datasets\together_ai_token.txt')
+                token = read_api_token('/Users/rohanjha/Desktop/college/F23/395T/BatchPrompt/src/models/TOGETHER_AI_TOKEN.txt')
                 model = TogetherAIModel(
                     api_token=token,
-                    model_name=self.config.generation_params["model_name"],
+                    model_name=self.config.generation_params.model_name,
                     generation_params=self.config.generation_params
                 )
             case ModelAPIType.DEBUG:
@@ -180,6 +166,7 @@ class BatchPromptExperiment:
             # otherwise
             case _: 
                 raise NotImplementedError("Only OpenAI and TogetherAI APIs are currently supported")
+        # cover all bases
         self.model = model
         return model
 
@@ -192,7 +179,6 @@ class BatchPromptExperiment:
         if self.model is None:
             self.model = self.load_language_model()
 
-        # TODO Rohan: Make this work. Currently getting error with OpenAI and not returning result within 3 seconds with TogetherAI
         batched_results = [
             (ids, self.model.query(prompt))
             for (ids, prompt) in tqdm(model_inputs)
@@ -227,7 +213,6 @@ class BatchPromptExperiment:
         # splits self.questions into batches that are lists of individual dictionaries along with their ids
         batched_questions: List[Dict[str, List[Any]]] = self.batch_questions()
 
-        # TODO Rohan: Why are we taking the first 10
         batched_questions = batched_questions[:10]
 
         # generate prompts for each batch
@@ -235,22 +220,16 @@ class BatchPromptExperiment:
             (ids, self.batch_prompt_template.generate_prompt(batch))
             for (ids, batch) in batched_questions
         ]
-        # TODO: Need to store the batched model inputs in a reasonable way/ folder location
-        # TODO: Need to run evaluation
+        # for debug purposes
         batched_model_inputs = batched_model_inputs[:10]
-        outputs = self.batch_query_model(batched_model_inputs[0:2])
-        batched_model_outputs = self.batch_query_model(batched_model_inputs)
-
-        # TODO: Need to return evalautiono
         # TODO: igure out how to also save the config, which includes a lambda/function that might be tricky to pickle
-        # print("Dumping batched model inputs to file...")
-        # pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
+        print("Dumping batched model inputs to file...")
+        pickle.dump((batched_model_inputs), open('batched_model_inputs.pkl', 'wb'))
         # query model
-
-        # batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        batched_model_outputs = self.batch_query_model(batched_model_inputs)
         # # # save the pickled batched model outputs to file
-        # print("Dumping batched model outputs to file...")
-        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
+        print("Dumping batched model outputs to file...")
+        pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -333,8 +312,6 @@ class BatchPromptTemplate:
         example_answers = []
         questions = []
 
-        #TODO Rohan: Rather than having model return {'sentence1': 'In Italy, big protes...n Tuesday.', 'sentence2': 'The Italian governme...education.', 'label': 0, 'idx': 1577}, I think the model should return a string that represents the question, and a string that represents the desired output. I have code that does this.
-
         examples = self.get_examples(batch)
         for i, example in enumerate(examples):
             # the format functions take care of the Q[i] notation
@@ -344,21 +321,6 @@ class BatchPromptTemplate:
         for i, question in enumerate(batch):
             questions.append(self.example_question_format(question, None if self.is_baseline else i))
         
-        '''TODO Rohan:  add an extra sentence so that the LLM knows the following are examplesdefault_shot_types = {
-        "Zero-Shot": "",
-        "Few-Shot": "Consider the following examples and maintain their formatting.\n",
-        "One-Shot": "Consider the following example and maintain its formatting."
-        }'''
-            
-        '''TODO Rohan:  add an extra sentence so that the LLM knows the answers to the example questions are answers to the example questions ex: Response to examples in Batch for Few-Shot
-        }'''
-
-        '''
-        # TODO: ROhan add an extra sentence so that the LLM knows the following are the actual questions to answer: #Questions in Batch to answer
-        '''
-        '''
-        # TODO: Maybe have end of prompt be  "Response to Questions in Batch: \n"
-        '''
         prompt = "\n".join(
             [
                 # TODO: Should the spacing between description and examples and questions be user-defined/programmable?
@@ -375,6 +337,61 @@ class BatchPromptTemplate:
 
 
 if __name__ == "__main__":
+    
+    example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
+    example_answer_format=lambda example, i: f"Answer[{i}]: {example['label']}"
+
+    # config = BatchPromptingExperimentConfig(
+    #     dataset=DatasetType.RTE,
+    #     hf_dataset_path=['glue', 'rte'],
+    #     examples_split_name='train',
+    #     evaluation_split_name='validation',
+    #     task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
+    #     k_shot=3,
+    #     is_baseline=False,
+    #     example_selection=ExampleSelectionType.RANDOM,
+    #     example_question_format=example_question_format,
+    #     example_answer_format=example_answer_format,
+    #     batch_size=4,
+    #     generation_params=TogetherAIGenerationParameters(
+    #         model_name='togethercomputer/llama-2-7b',
+    #         max_tokens=64,
+    #         temperature=0.7,
+    #         top_p=0.9,
+    #         top_k=0,
+    #         repetition_penalty=1.0,
+    #         logprobs=0,
+    #     ),
+    #     random_seed=0,
+    # )
+
+    oai_gen_params = OpenAIGenerationParameters(
+            model_name='gpt-3.5-turbo',
+            temperature=0.6,
+            max_tokens=64,
+            frequency_penalty=1.0,
+        )
+
+    config = BatchPromptingExperimentConfig(
+        dataset=DatasetType.RTE,
+        hf_dataset_path=['glue', 'rte'],
+        examples_split_name='train',
+        evaluation_split_name='validation',
+        task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
+        k_shot=3,
+        is_baseline=False,
+        example_selection=ExampleSelectionType.RANDOM,
+        example_question_format=example_question_format,
+        example_answer_format=example_answer_format,
+        batch_size=4,
+        model_api=ModelAPIType.OPEN_AI,
+        generation_params=oai_gen_params,
+        random_seed=0,
+    )
+
+    experiment = BatchPromptExperiment(config)
+    # experiment.execute()
+    print("DONE")
 
     # TODO: I don't think these are necessary and instead should be loaded as question or as answer
     # example_question_format = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
@@ -383,97 +400,97 @@ if __name__ == "__main__":
     from data.parsing_functions import *
 
     
-    # THIS WORKS BUT NEED CHANGE EXAMPLE SELECTION
-    # config = BatchPromptingExperimentConfig(
-    # dataset=DatasetType.RTE,
-    # hf_dataset_path=['glue', 'rte'],
-    # examples_split_name='train',
-    # evaluation_split_name='validation',
-    # task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
-    # k_shot=3,
-    # is_baseline=False,
-    # example_selection=ExampleSelectionType.RANDOM,
-    # example_question_format=example_question_format,
-    # example_answer_format=example_answer_format,
-    # batch_size=4,
-    # model_api=ModelAPIType.OPEN_AI,
-    # generation_params=OpenAIGenerationParameters(
-    #     model_name='gpt-3.5-turbo',
-    #     temperature=0.6,
-    #     max_tokens=64,
-    #     # frequency_penalty=1.0,
-    # ),
-    # random_seed=0,
-    # )
-    # THIS WORKS BUT NEED CHANGE EXAMPLE SELECTION
-    # config = BatchPromptingExperimentConfig(
-    # dataset=DatasetType.MBPP,
-    # hf_dataset_path=['mbpp'],
-    # examples_split_name='train',
-    # evaluation_split_name='validation',
-    # task_description='You are tasked with solving Python programming problems that are designed to be solvable by entry-level programmers. Each problem will consist of a task description, and your job is to output a string that when parsed is an executable Python code function that fulfills the requirements of the task. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format.',
-    # k_shot=3,
-    # is_baseline=False,
-    # example_selection=ExampleSelectionType.RANDOM,
-    # example_question_format=mbpp_question_format,
-    # example_answer_format=mbpp_answer_format,
-    # batch_size=4,
-    # model_api=ModelAPIType.OPEN_AI,
-    # generation_params=OpenAIGenerationParameters(
-    #     model_name='gpt-3.5-turbo',
-    #     temperature=0.6,
-    #     max_tokens=64,
-    #     # frequency_penalty=1.0,
-    # ),
-    # random_seed=0,
-    # )  
+    THIS WORKS BUT NEED CHANGE EXAMPLE SELECTION
+    config = BatchPromptingExperimentConfig(
+    dataset=DatasetType.RTE,
+    hf_dataset_path=['glue', 'rte'],
+    examples_split_name='train',
+    evaluation_split_name='validation',
+    task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
+    k_shot=3,
+    is_baseline=False,
+    example_selection=ExampleSelectionType.RANDOM,
+    example_question_format=example_question_format,
+    example_answer_format=example_answer_format,
+    batch_size=4,
+    model_api=ModelAPIType.OPEN_AI,
+    generation_params=OpenAIGenerationParameters(
+        model_name='gpt-3.5-turbo',
+        temperature=0.6,
+        max_tokens=64,
+        # frequency_penalty=1.0,
+    ),
+    random_seed=0,
+    )
+    THIS WORKS BUT NEED CHANGE EXAMPLE SELECTION
+    config = BatchPromptingExperimentConfig(
+    dataset=DatasetType.MBPP,
+    hf_dataset_path=['mbpp'],
+    examples_split_name='train',
+    evaluation_split_name='validation',
+    task_description='You are tasked with solving Python programming problems that are designed to be solvable by entry-level programmers. Each problem will consist of a task description, and your job is to output a string that when parsed is an executable Python code function that fulfills the requirements of the task. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format.',
+    k_shot=3,
+    is_baseline=False,
+    example_selection=ExampleSelectionType.RANDOM,
+    example_question_format=mbpp_question_format,
+    example_answer_format=mbpp_answer_format,
+    batch_size=4,
+    model_api=ModelAPIType.OPEN_AI,
+    generation_params=OpenAIGenerationParameters(
+        model_name='gpt-3.5-turbo',
+        temperature=0.6,
+        max_tokens=64,
+        # frequency_penalty=1.0,
+    ),
+    random_seed=0,
+    )  
 
-    # TODO: This works, but output is not always in desired format. TODO: need to modify prompt with more instruction of what examples, what example responses, what actual questions, etc. to ensure format alignment
-    # config = BatchPromptingExperimentConfig(
-    # dataset=DatasetType.GSM8K,
-    # hf_dataset_path=["gsm8k", "main"],
-    # examples_split_name='train',
-    # evaluation_split_name='test',
-    # task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
-    # k_shot=3,
-    # is_baseline=False,
-    # example_selection=ExampleSelectionType.RANDOM,
-    # example_question_format=gsm8k_question_format,
-    # example_answer_format=gsm8k_answer_format,
-    # batch_size=4,
-    # model_api=ModelAPIType.OPEN_AI,
-    # generation_params=OpenAIGenerationParameters(
-    #     model_name='gpt-3.5-turbo',
-    #     temperature=0.6,
-    #     max_tokens=64,
-    #     # frequency_penalty=1.0,
-    # ),
-    # random_seed=0,
-    # )  
+    TODO: This works, but output is not always in desired format. TODO: need to modify prompt with more instruction of what examples, what example responses, what actual questions, etc. to ensure format alignment
+    config = BatchPromptingExperimentConfig(
+    dataset=DatasetType.GSM8K,
+    hf_dataset_path=["gsm8k", "main"],
+    examples_split_name='train',
+    evaluation_split_name='test',
+    task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
+    k_shot=3,
+    is_baseline=False,
+    example_selection=ExampleSelectionType.RANDOM,
+    example_question_format=gsm8k_question_format,
+    example_answer_format=gsm8k_answer_format,
+    batch_size=4,
+    model_api=ModelAPIType.OPEN_AI,
+    generation_params=OpenAIGenerationParameters(
+        model_name='gpt-3.5-turbo',
+        temperature=0.6,
+        max_tokens=64,
+        # frequency_penalty=1.0,
+    ),
+    random_seed=0,
+    )  
 
-    #TODO: This works, but we are sampling examples from the same batch that we want answers from. We need to fix this
-    # config = BatchPromptingExperimentConfig(
-    # dataset=DatasetType.GSM8K,
-    # hf_dataset_path=["reasoning-machines/gsm-hard"],
-    # # Our code cannot currently handle this without risking sampling examples that equal elements in our batch we want answers from
-    # examples_split_name='train',
-    # evaluation_split_name='train',
-    # task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
-    # k_shot=3,
-    # is_baseline=False,
-    # example_selection=ExampleSelectionType.RANDOM,
-    # example_question_format=gsm8k_hard_question_format,
-    # example_answer_format=gsm8k_hard_answer_format,
-    # batch_size=4,
-    # model_api=ModelAPIType.OPEN_AI,
-    # generation_params=OpenAIGenerationParameters(
-    #     model_name='gpt-3.5-turbo',
-    #     temperature=0.6,
-    #     max_tokens=64,
-    #     # frequency_penalty=1.0,
-    # ),
-    # random_seed=0,
-    # )  
+    TODO: This works, but we are sampling examples from the same batch that we want answers from. We need to fix this
+    config = BatchPromptingExperimentConfig(
+    dataset=DatasetType.GSM8K,
+    hf_dataset_path=["reasoning-machines/gsm-hard"],
+    # Our code cannot currently handle this without risking sampling examples that equal elements in our batch we want answers from
+    examples_split_name='train',
+    evaluation_split_name='train',
+    task_description='''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.''',
+    k_shot=3,
+    is_baseline=False,
+    example_selection=ExampleSelectionType.RANDOM,
+    example_question_format=gsm8k_hard_question_format,
+    example_answer_format=gsm8k_hard_answer_format,
+    batch_size=4,
+    model_api=ModelAPIType.OPEN_AI,
+    generation_params=OpenAIGenerationParameters(
+        model_name='gpt-3.5-turbo',
+        temperature=0.6,
+        max_tokens=64,
+        # frequency_penalty=1.0,
+    ),
+    random_seed=0,
+    )  
 
     config = BatchPromptingExperimentConfig(
     dataset=DatasetType.MNLI,
