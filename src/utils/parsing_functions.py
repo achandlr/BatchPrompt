@@ -4,6 +4,15 @@ import re
 from typing import List
 
 
+def gsm8k_question_format_baseline(example, i):
+    example_question_format = f"{example['question']}"
+    return example_question_format
+
+def gsm8k_answer_format_baseline(example, i):
+    extract_numbers = lambda x: x.split("####")[-1].strip()
+    extracted_values = extract_numbers(example['answer'])
+    return f"{extracted_values}"
+
 def gsm8k_question_format(example, i):
     example_question_format = f"Q[{i}]: {example['question']}"
     return example_question_format
