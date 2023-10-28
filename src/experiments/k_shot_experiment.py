@@ -149,7 +149,12 @@ class DatasetConfig:
             if not self.local_path.suffix == '.json':
                 raise ValueError(f"Local path {self.local_path} is not a json file")
 
-
+@dataclass
+class BatchPromptingDebugConfig:
+    truncate_examples : bool = False,
+    truncate_batch_queries : bool = False
+    save_batched_model_inputs : Optional[Path] = None
+    save_batched_model_outputs : Optional[Path] = None
 @dataclass
 class BatchPromptingExperimentConfig:
     # can either load a dataset from huggingface or from a local json file
@@ -167,6 +172,7 @@ class BatchPromptingExperimentConfig:
     # Note that this will include the api model name whereas model_name will be less formal like GPT-3.5 vs LLama-2-70B, etc.
     model_api: ModelAPIType
     generation_params: GENERATION_PARAMETERS_TYPE
+    debug : Optional[BatchPromptingDebugConfig] = None
     random_seed: int = 0
 
 # datasets = ['GSM8K', 'MBPP', 'glue-RTE', 'glue-MNLI']
@@ -188,7 +194,7 @@ class BatchPromptExperiment:
         #     split=self.config.questions_split_name,
         # )
         # must add an index column to gsm8k
-
+        self.debug = self.config.debug
         self.batch_prompt_template = BatchPromptTemplate(
             examples=self.examples,
             dataset=self.config.questions_dataset_config.dataset,
@@ -198,6 +204,7 @@ class BatchPromptExperiment:
             example_question_format=self.config.example_question_format,
             example_answer_format=self.config.example_answer_format,
             example_selection=self.config.example_selection,
+            debug=self.debug,
         )
         self.model = self.load_language_model(
             model_api=self.config.model_api, 
@@ -310,11 +317,18 @@ class BatchPromptExperiment:
             for (ids, batch) in batched_questions
         ]
         # for debug purposes
-        batched_model_inputs = batched_model_inputs
+        if self.debug:
+            batched_model_inputs = batched_model_inputs[:3]
         # TODO: igure out how to also save the config
         # which includes a lambda/function that might be tricky to pickle
         # query model
         batched_model_outputs = self.batch_query_model(batched_model_inputs)
+        if batched_model_inputs:
+            if self.debug.save_batched_model_inputs:
+                pickle.dump((batched_model_inputs), open(self.debug.save_batched_model_inputs, 'wb'))
+            if self.debug.save_batched_model_outputs:
+                pickle.dump((batched_model_outputs), open(self.debug.save_batched_model_outputs, 'wb'))
+
 
         return (batched_model_outputs, answers_dict)
         # TODO: Alex, move this logic to a separate file
@@ -360,6 +374,7 @@ class BatchPromptTemplate:
             example_question_format: Callable[[Dict[str, Any], Optional[int]], str],
             example_answer_format: Callable[[Dict[str, Any], Optional[int]], str],
             example_selection: ExampleSelectionType,
+            debug: Optional[BatchPromptingDebugConfig] = None,
     ):
         self.examples = examples
         self.dataset = dataset
@@ -381,9 +396,15 @@ class BatchPromptTemplate:
                     ExampleSelectionType.MAX_MARGINAL_RELEVANCE: MaxMarginalRelevanceExampleSelector,
                 }[self.example_selection]
                 print("Initializing Semantic Example Selector...")
+
+                examples = list(self.examples)
+                if debug:
+                    if debug.truncate_batch_queries:
+                        examples = examples[:20]
+
                 self.example_selector = selector_class.from_examples(
                     # Need to turn hf dataset into a list of dicts
-                    examples=list(self.examples),
+                    examples=examples,
                     # TODO: do we want embeddings to be configurable? probably not... it has sensible defaults
                     # and it is certainly not a menaingful variable in our experiments
                     embeddings=HuggingFaceEmbeddings(),
@@ -585,33 +606,12 @@ if __name__ == "__main__":
         model_api=ModelAPIType.OPEN_AI,
         generation_params=oai_gen_params,
         random_seed=0,
+        debug=BatchPromptingDebugConfig(
+            truncate_examples=True,
+            truncate_batch_queries=True,
+            save_batched_model_inputs=Path('batched_model_inputs.pkl'),
+            save_batched_model_outputs=Path('batched_model_outputs.pkl'),
+        ),
     )
     experiment = BatchPromptExperiment(config)
     experiment.execute()
-
-
-
-# Other testing graveyard
-
-# config = BatchPromptingExperimentConfig(
-#     dataset=DatasetType.RTE,
-#     hf_dataset_path=['glue', 'rte'],
-#     examples_split_name='train',
-#     questions_split_name='validation',
-#     task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.',
-#     k_shot=3,
-#     example_selection=ExampleSelectionType.RANDOM,
-#     example_question_format=example_question_format,
-#     example_answer_format=example_answer_format,
-#     batch_size=4,
-#     generation_params=TogetherAIGenerationParameters(
-#         model_name='togethercomputer/llama-2-7b',
-#         max_tokens=64,
-#         temperature=0.7,
-#         top_p=0.9,
-#         top_k=0,
-#         repetition_penalty=1.0,
-#         logprobs=0,
-#     ),
-#     random_seed=0,
-# )
