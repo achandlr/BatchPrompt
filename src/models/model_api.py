@@ -68,7 +68,7 @@ class TogetherAIModel(LanguageModel):
         together.api_key = api_token
         self.api_token = api_token
         self.model_name = model_name
-        self.generation_params = generation_params
+        self.generation_params = {key : value for key, value in generation_params.items() if key != 'model_name'}
 
     def __repr__(self):
         return f"TogetherAIModel(model_name={self.model_name}, generation_params={self.generation_params})"
