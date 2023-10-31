@@ -8,7 +8,6 @@ import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 class TogetherAIGenerationParameters(TypedDict):
-    model_name: str
     max_tokens: int
     temperature: float
     top_p: float
