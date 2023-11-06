@@ -4,6 +4,7 @@ import backoff
 from dataclasses import dataclass
 from typing import List, Dict, Any, Tuple, TypedDict, Optional
 from pathlib import Path
+import time
 from concurrent.futures import ThreadPoolExecutor, TimeoutError
 
 class TogetherAIGenerationParameters(TypedDict):
@@ -67,7 +68,7 @@ class TogetherAIModel(LanguageModel):
         together.api_key = api_token
         self.api_token = api_token
         self.model_name = model_name
-        self.generation_params = generation_params
+        self.generation_params = {key : value for key, value in generation_params.items() if key != 'model_name'}
 
     def __repr__(self):
         return f"TogetherAIModel(model_name={self.model_name}, generation_params={self.generation_params})"
@@ -100,15 +101,34 @@ class OpenAIModel(LanguageModel):
         return f"OpenAIModel(model_name={self.model_name}, generation_params={self.generation_params})"
     
     @backoff.on_exception(backoff.expo, openai.error.RateLimitError, max_tries=10)
-    def query(self, prompt : str) -> str:
+    def query(self, prompt):
         message = [{"role": "user", "content": prompt}]
-        response = openai.ChatCompletion.create(
-            model=self.model_name,
-            messages=message,
-            **self.generation_params,
-        )
-        text_response = response["choices"][0]["message"]["content"]
-        return text_response
+        # Estimate the number of tokens used
+        estimated_tokens = len(prompt.split()) * 3
+        # Set the rate limits for different models
+        rate_limit = 10_000 if "gpt-4" in model else 90_000
+        
+        try_cnt = 0
+        max_try_cnt = 10
+        timeout = 10
+        
+        while try_cnt < max_try_cnt:
+            with ThreadPoolExecutor() as executor:
+                future = executor.submit(openai.ChatCompletion.create,
+                                        model=self.model_name,
+                                        messages=message,
+                                        **self.generation_params,)
+                try:
+                    response = future.result(timeout=timeout)
+                    text_response = response["choices"][0]["message"]["content"]
+                    return text_response
+                except Exception as e:
+                    wait_time = (estimated_tokens / rate_limit) * 60 * (1 + try_cnt**2 / 4)
+                    print(f"Error {str(e)} occurred. Waiting for {wait_time} seconds...")
+                    time.sleep(wait_time)
+                    try_cnt += 1
+        print("Errors occurred too many times. Aborting...")
+        raise("Errors occurred too many times. Aborting...")
     
 class DebugModel(LanguageModel):
     def __init__(self):

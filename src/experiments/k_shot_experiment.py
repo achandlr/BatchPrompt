@@ -72,6 +72,18 @@ DATASET_INPUT_KEYS = {
     DatasetType.RTE : ['sentence1', 'sentence2'],
     DatasetType.MNLI : ['premise', 'hypothesis'],
 }
+#the keys over which examples are semantically retrieved. 
+# NOTE: these keys must be string/stringable (not dicts like some of commonsenseqa's)
+DATASET_EXAMPLE_KEYS = {
+    DatasetType.GSM8K_HARD_CoT : ['question'],
+    DatasetType.GSM8K_HARD : ['input'],
+    DatasetType.COMMON_SENSE : ['question'],
+    DatasetType.COMMON_SENSE_CoT : ['source'],
+    DatasetType.GSM8K : ['question'],
+    DatasetType.MBPP : ['text','test_list'],
+    DatasetType.RTE : ['sentence1', 'sentence2'],
+    DatasetType.MNLI : ['premise', 'hypothesis'],
+}
 
 DATASET_LABEL_KEYS = {
     # TODO: Verify
@@ -152,7 +164,7 @@ class DatasetConfig:
 @dataclass
 class BatchPromptingDebugConfig:
     truncate_examples : bool = False,
-    truncate_batch_queries : bool = False
+    truncate_batch_queries : int = False
     save_batched_model_inputs : Optional[Path] = None
     save_batched_model_outputs : Optional[Path] = None
 @dataclass
@@ -188,15 +200,6 @@ class BatchPromptExperiment:
         self.config = config
         self.questions = self.load_dataset(self.config.questions_dataset_config)
         self.examples = self.load_dataset(self.config.examples_dataset_config)
-        # self.examples = load_dataset(
-        #     *self.config.hf_dataset_path,
-        #     split=self.config.examples_split_name,
-        # )
-        # self.questions = load_dataset(
-        #     *self.config.hf_dataset_path,
-        #     split=self.config.questions_split_name,
-        # )
-        # must add an index column to gsm8k
         self.debug = self.config.debug
         self.batch_prompt_template = BatchPromptTemplate(
             examples=self.examples,
@@ -232,9 +235,11 @@ class BatchPromptExperiment:
                 *dataset_config.hf_dataset_path,
                 split=dataset_config.split_name,
             )
-        # add an index column to gsm8k
-        if dataset_config.dataset == DatasetType.GSM8K:
-            dataset = dataset.add_column('idx', list(range(len(dataset))))
+        # add an index column to the dataset if it doesn't already have one
+        id_key_name = DATASET_ID_KEYS[dataset_config.dataset][0]
+        if id_key_name not in dataset.column_names:
+            dataset = dataset.add_column(id_key_name, list(range(len(dataset))))
+        
         return dataset
     
     def load_language_model(self, model_api, generation_params) -> LanguageModel:
@@ -337,17 +342,6 @@ class BatchPromptExperiment:
 
 
         return (batched_model_inputs, batched_model_outputs, answers_dict)
-        # TODO: Alex, move this logic to a separate file
-        # pred = []
-        # for batched_output in batched_model_outputs:
-        #     batched_output_parsed = extract_answers_batch(batched_output)
-        #     assert len(batched_output_parsed) == len(batched_model_inputs)
-        #     pred.extend(batched_output_parsed)
-        # evaluator = Evaluation()
-        # stats = evaluator.get_stats(y_pred=pred, y_true=ground_truth_answers, answer_type = answer_types[i])
-        # # save the pickled batched model outputs to file
-        # print("Dumping batched model outputs to file...")
-        # pickle.dump((batched_model_outputs), open('batched_model_outputs.pkl', 'wb'))
 
 
 def parse_answers(model_outputs: List[Tuple[List[ID_TYPE], str]]) -> Dict[List[ID_TYPE], str]:
@@ -396,6 +390,7 @@ class BatchPromptTemplate:
         self.prompt_format = prompt_format
         self.example_selection = example_selection
         self.is_baseline = is_baseline
+        self.debug = debug
 
         if self.is_baseline:
             assert(self.num_questions == 1)
@@ -417,15 +412,26 @@ class BatchPromptTemplate:
                     if debug.truncate_batch_queries:
                         examples = examples[:20]
 
+                # this ensures that only the keys that are used for example selection (which must be strings/stringable are loaded
+                # and add a secret index column to later get the full example from the dataset
+                selection_examples = self.examples.select_columns(
+                    DATASET_EXAMPLE_KEYS[self.dataset]
+                )
+                selection_examples = selection_examples.add_column(
+                    "_idx", list(range(len(selection_examples)))
+                )
+                
                 self.example_selector = selector_class.from_examples(
                     # Need to turn hf dataset into a list of dicts
-                    examples=examples,
+                    examples=selection_examples,
                     # TODO: do we want embeddings to be configurable? probably not... it has sensible defaults
                     # and it is certainly not a menaingful variable in our experiments
                     embeddings=HuggingFaceEmbeddings(),
                     vectorstore_cls=Chroma,
                     k=self.num_examples,
-                    input_keys=DATASET_INPUT_KEYS[self.dataset],
+                    # DATASET_EXAMPLE_KEYS may be different from input keys
+                    # because they can only be strings, so commonsense, for example, has a dictionary of choices that we won't use
+                    input_keys=DATASET_EXAMPLE_KEYS[self.dataset],
                 )
                 print("Done initializing Semantic Example Selector...")
 
@@ -437,10 +443,19 @@ class BatchPromptTemplate:
             case ExampleSelectionType.LEXICAL:
                 raise NotImplementedError("Lexical example selection is not yet implemented")
             case ExampleSelectionType.SEMANTIC | ExampleSelectionType.MAX_MARGINAL_RELEVANCE:
-                top_k_examples_per_question = [
-                    self.example_selector.select_examples(question)
+                # get the top k examples for each question
+                # by first retrieving from the selection_examples for each question which have the associated index
+                # then using that index to get the real examples
+                top_k_examples_per_question : List[List[Dict[str, Any]]] = [
+                    [
+                        self.examples[retrieved['_idx']]
+                        for retrieved in self.example_selector.select_examples(question)
+                    ]
                     for question in batch
                 ]
+                if self.debug:
+                    print("Top k examples per question:")
+                    print(top_k_examples_per_question)
                 # num questions
                 # note that we don't use self.num_questions because the batch could 
                 # be smaller than that if it's the last batch
@@ -528,9 +543,6 @@ if __name__ == "__main__":
             frequency_penalty=1.0,
         )
 
-
-
-
     questions_config_rte = DatasetConfig(
         dataset=DatasetType.RTE,
         hf_dataset_path=['glue', 'rte'],
@@ -542,110 +554,52 @@ if __name__ == "__main__":
         split_name='train',
     )
     task_description_rte = 'Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.'
-    # example_question_format_rte = lambda example, i: f"Premise[{i}]: {example['sentence1']}\nHypothesis[{i}]: {example['sentence2']}"
-    # example_answer_format_rte = lambda example, i: f"A[{i}]: {example['label']}"
 
-    # TODO: Alex, move these configs to a separate file
-    # questions_config_GSM8K = DatasetConfig(
-    #     dataset=DatasetType.GSM8K,
-    #     hf_dataset_path=['gsm8k', 'main'],
-    #     split_name='test',
-    # )
-    # examples_config_GSM8K = DatasetConfig(
-    #     dataset=DatasetType.GSM8K,
-    #     hf_dataset_path=['gsm8k', 'main'],
-    #     split_name='train',
-    # )
-    # task_description_GSM8K = '''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.'''
+    questions_config_COMMON_SENSE = DatasetConfig(
+        dataset=DatasetType.COMMON_SENSE,
+        hf_dataset_path=['commonsense_qa'],
+        split_name='validation',
+    )
+    examples_config_COMMON_SENSE = DatasetConfig(
+        dataset=DatasetType.COMMON_SENSE,
+        hf_dataset_path=['commonsense_qa'],
+        split_name='train',
+    )
+    task_description_COMMON_SENSE = '''You are tasked with answering multiple-choice questions that require both contextual understanding and general world knowledge. Each question will have five options labeled 'a', 'b', 'c', 'd', and 'e'. Your job is to select the most appropriate answer by outputting the letter corresponding to that option. " These questions are part of the CommonsenseQA dataset, designed to test your ability to answer questions that often require prior knowledge. Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format. '''
 
-    # '''
-    # # TODO: Rohan: Can you split reasoning-machines/gsm-hard[train] into a train test split?  
-    # We only have train in gsm-hard so we need to split both. The following below is commented out because sampling is done from the same place.
-    # '''
-    # questions_config_GSM8K_HARD = DatasetConfig(
-    #     dataset=DatasetType.GSM8K_HARD,
-    #     hf_dataset_path=["reasoning-machines/gsm-hard"],
-    #     split_name='train',
-    # )
-    # examples_config_GSM8K_HARD = DatasetConfig(
-    #     dataset=DatasetType.GSM8K_HARD,
-    #     hf_dataset_path=["reasoning-machines/gsm-hard"],
-    #     split_name='train',
-    # )
-    # task_description_GSM8K_HARD = '''Solve the following math question. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in A[idx]: answer format.'''
+    def commonsense_question_format(example, i):
+        question_with_answer_choices = example["source"]
+        rationale = example["choices"]
+        def build_question_string(question, choices, i):
+            question_str = f"Question[{i}]: {question}\nAnswer Choices: \n"
+            choice_labels = choices['label']
+            choice_texts = choices['text']
+            
+            for label, text in zip(choice_labels, choice_texts):
+                question_str += f"{label}: {text}\n"
+            
+            return question_str
+        question_str = build_question_string(question_with_answer_choices, rationale)
+        return question_str
 
+    def commonsense_answer_format(example, i):
+        answer = example["answerKey"]
+        return f"Answer[{i}]: {answer}"
 
-
-    # questions_config_MBPP = DatasetConfig(
-    #     dataset=DatasetType.MBPP,
-    #     hf_dataset_path=['mbpp'],
-    #     split_name='validation',
-    # )
-    # examples_config_MBPP = DatasetConfig(
-    #     dataset=DatasetType.MBPP,
-    #     hf_dataset_path=['mbpp'],
-    #     split_name='train',
-    # )
-    # task_description_MBPP = '''You are tasked with solving Python programming problems that are designed to be solvable by entry-level programmers. Each problem will consist of a task description, and your job is to output a string that when parsed is an executable Python code function that fulfills the requirements of the task. # Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format.'''
-
-
-
-    # questions_config_MNLI = DatasetConfig(
-    #     dataset=DatasetType.MNLI,
-    #     hf_dataset_path=['glue', 'mnli'],
-    #     split_name='validation_matched',
-    # )
-    # examples_config_MNLI = DatasetConfig(
-    #     dataset=DatasetType.MNLI,
-    #     hf_dataset_path=['glue', 'mnli'],
-    #     split_name='train',
-    # )
-    # task_description_MNLI = '''You are tasked with the job of Multi-Genre Natural Language Inference (MNLI). For each task, you will be given a premise sentence and a hypothesis sentence. Your job is to predict the relationship between the premise and the hypothesis, classifying each pair as either 'entailment', 'contradiction', or 'neutral'. Instruction: For each question in the batch, provide a single answer, following the format A[idx]: answer. Output only the answers with the associated index in "A[idx]: answer" format. Each answer should be only one of the following: 'entailment', 'contradiction', or 'neutral'. So in other words, for each question, you should output one of the following: A[idx]: entailment, A[idx]: contradiction, or A[idx]: neutral.'''
-
-
-
-    # questions_config_COMMON_SENSE = DatasetConfig(
-    #     dataset=DatasetType.COMMON_SENSE,
-    #     hf_dataset_path=['commonsense_qa'],
-    #     split_name='validation',
-    # )
-    # examples_config_COMMON_SENSE = DatasetConfig(
-    #     dataset=DatasetType.COMMON_SENSE,
-    #     hf_dataset_path=['commonsense_qa'],
-    #     split_name='train',
-    # )
-    # task_description_COMMON_SENSE = '''You are tasked with answering multiple-choice questions that require both contextual understanding and general world knowledge. Each question will have five options labeled 'a', 'b', 'c', 'd', and 'e'. Your job is to select the most appropriate answer by outputting the letter corresponding to that option. " These questions are part of the CommonsenseQA dataset, designed to test your ability to answer questions that often require prior knowledge. Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format. '''
-
-
-
-
-
-
-    # config_param_list = [
-    #     [questions_config_rte, examples_config_rte, task_description_rte, rte_question_format, rte_answer_format],
-    #     [questions_config_GSM8K, examples_config_GSM8K, task_description_GSM8K, gsm8k_question_format, gsm8k_answer_format],
-    #     # [questions_config_MBPP, examples_config_MBPP, task_description_MBPP, mbpp_question_format, mbpp_answer_format],
-    #     [questions_config_MNLI, examples_config_MNLI, task_description_MNLI, mnli_question_format, mnli_answer_format],
-    #     # [questions_config_GSM8K_HARD, examples_config_GSM8K_HARD, task_description_GSM8K_HARD, gsm8k_question_format, gsm8k_answer_format],
-    #     # [questions_config_COMMON_SENSE, examples_config_COMMON_SENSE, task_description_COMMON_SENSE, commonsense_question_format, commonsense_answer_format] 
-    #     ]
-
-    # stats = []
-    # for questions_config, examples_config, task_description in config_param_list:
     config = BatchPromptingExperimentConfig(
-        questions_dataset_config=questions_config_rte,
-        examples_dataset_config=examples_config_rte,
-        task_description='Determine whether the hypothesis is entailed by the premise. Answer 0 for entailed, and 1 for not entailed.\n',
+        questions_dataset_config=questions_config_COMMON_SENSE,
+        examples_dataset_config=examples_config_COMMON_SENSE,
+        task_description=task_description_COMMON_SENSE,
         pre_question_instructions="Consider the following examples and maintain their formatting.\n",
         k_shot=7,
-        example_selection=ExampleSelectionType.RANDOM,
-        example_question_format=example_question_format_baseline,
-        example_answer_format=example_answer_format_baseline,
-        batch_size=1,
+        example_selection=ExampleSelectionType.SEMANTIC,
+        example_question_format=commonsense_question_format,
+        example_answer_format=commonsense_answer_format,
+        batch_size=4,
         model_api=ModelAPIType.OPEN_AI,
         generation_params=oai_gen_params,
         random_seed=0,
-        is_baseline=True,
+        is_baseline=False,
         debug=BatchPromptingDebugConfig(
             truncate_examples=True,
             truncate_batch_queries=True,
