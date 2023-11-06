@@ -1,4 +1,4 @@
-datasets>=2.14
+datasets
 openai
 langchain
 together
@@ -6,3 +6,5 @@ sentence-transformers
 chromadb
 backoff
 tqdm
+matplotlib
+litellm
