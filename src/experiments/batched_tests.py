@@ -3,8 +3,8 @@
 from src.utils.evaluation import CodeEvaluator, Evaluation
 import re
 from typing import Callable, List, Dict, Any, Tuple, Union, Optional, TypedDict
-from concurrent.futures import ThreadPoolExecutor, as_completed
-import litellm
+# # from concurrent.futures import ThreadPoolExecutor, as_completed
+# import litellm
 import os
 from litellm import batch_completion
 
@@ -12,9 +12,9 @@ import together
 import openai
 import backoff
 from dataclasses import dataclass
-from typing import List, Dict, Any, Tuple, TypedDict, Optional
+from typing import List, Dict, Any, Tuple, TypedDict, Optional 
 from pathlib import Path
-from concurrent.futures import ThreadPoolExecutor, TimeoutError
+# from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
 import math
 
@@ -485,63 +485,36 @@ class BatchPromptExperiment:
         self, 
         model_inputs: List[Tuple[List[int], str]]
     ) -> List[Tuple[List[int], str]]:
-
+        
         if self.model is None:
             self.model = self.load_language_model()
-
-        # batched_results = [None] * len(model_inputs)
-        # futures = []
-        # future_to_ids_index = {}  # New dictionary to map Future to ids and index
 
         messages = [[{"role": "user", "content": i[1]}] for i in model_inputs]
         attempt_cnt = 0
         max_attempts = 10 
-        while attempt_cnt < max_attempts:
-            try:
-                # for reasonable_batch in all_messages
-                responses = batch_completion(
-                model="gpt-3.5-turbo-16k",
-                messages = messages,
-                temperature=0,
-                max_tokens=None,
-                )
-                results = [response["choices"][0]["message"]["content"] for response in responses]
-                return results
-            except Exception as e:
-                attempt_cnt += 1
-                print(f"Error {str(e)} occurred. Retrying...")
-                time.sleep(120* attempt_cnt)
-        
-        # TODO: This should never occur, but if it does, we should handle it
-        return ["" for i in range(len(messages))]
-        # query_method = self.model.query
+        model_query_batch_size = 10
+        results = []
+        message_sublists = [messages[i:i+model_query_batch_size] for i in range(0, len(messages), model_query_batch_size)]
+        for batched_messages in message_sublists:
+            while attempt_cnt < max_attempts:
+                try:
+                    responses = batch_completion(
+                    model=self.model.model_name,
+                    messages = batched_messages,
+                    **self.model.generation_params,
+                    # temperature=0,
+                    # max_tokens=None,
+                    )
+                    curr_results = [response["choices"][0]["message"]["content"] for response in responses]
+                    results.extend(curr_results)
+                except Exception as e:
+                    attempt_cnt += 1
+                    print(f"Error {str(e)} occurred. Retrying...")
+                    time.sleep(120* attempt_cnt)
+            curr_results = ["" for i in range(len(batched_messages))]
+            results.extend(curr_results)
+        return results
 
-        # with ThreadPoolExecutor(max_workers=10) as executor:
-        #     for i in range(min(10, len(model_inputs))):
-        #         ids, prompt = model_inputs[i]
-        #         future = executor.submit(query_method, prompt)
-        #         futures.append(future)
-        #         future_to_ids_index[future] = (ids, i)  # Store ids and index in the dictionary
-
-        #     for future in as_completed(futures):
-        #         ids, index = future_to_ids_index[future]  # Retrieve ids and index from the dictionary
-
-        #         try:
-        #             result = future.result()
-        #             batched_results[index] = (ids, result)
-        #         except Exception as e:
-        #             batched_results[index] = (ids, str(e))
-
-        #         futures.remove(future)
-
-        #         if index + 10 < len(model_inputs):
-        #             new_index = index + 10
-        #             ids, prompt = model_inputs[new_index]
-        #             future = executor.submit(query_method, prompt)
-        #             futures.append(future)
-        #             future_to_ids_index[future] = (ids, new_index)  # Update the dictionary
-
-        # return [result for result in batched_results if result is not None]
 
     def batch_questions(self) -> List[Tuple[List[ID_TYPE], List[Dict[str, Any]]]]:
 
@@ -970,7 +943,7 @@ class BatchPromptTemplate:
 
 
 
-from src.experiments.k_shot_experiment import *
+# from src.experiments.k_shot_experiment import *
 from src.utils.parsing_functions import * 
 
 oai_gen_params = OpenAIGenerationParameters(
@@ -1821,7 +1794,7 @@ def run_batched_tests(config, config_to_answer_type):
                     save_batched_model_inputs=None,
                     save_batched_model_outputs=None,
                 )
-        )
+            )
             experiment = BatchPromptExperiment(config)
             batched_model_inputs, batched_model_outputs, answers_dict = experiment.execute()
             if task_name == "MBPP":

@@ -1,3 +1,4 @@
+litellm
 datasets
 openai
 langchain
@@ -7,4 +8,3 @@ chromadb
 backoff
 tqdm
 matplotlib
-litellm
