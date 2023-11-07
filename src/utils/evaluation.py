@@ -42,7 +42,18 @@ class Evaluation:
         
         # Initialize the results dictionary
         results = {}
+        # Calculate the cannot_parse_proportion
+        cannot_parse_count = sum(pred == None for pred in y_pred)
+        total_predictions = len(y_pred)
+        cannot_parse_proportion = cannot_parse_count / total_predictions
         
+        # Add the cannot_parse_proportion to the results
+        results['cannot_parse_proportion'] = cannot_parse_proportion
+
+        for i in range(len(y_pred)):
+            if y_pred[i] == None:
+                # None indicates answer can't be parsed, so we fill in non-parseable answers with a dummy value that will be marked as incorrect
+                y_pred[i] = -123456789
         # Convert input to numpy arrays for easier handling
         y_pred = np.array(y_pred)
         y_true = np.array(y_true)
