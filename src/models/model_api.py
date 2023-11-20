@@ -75,6 +75,7 @@ class TogetherAIModel(LanguageModel):
 
     @backoff.on_exception(backoff.expo, Exception, max_tries=10)
     def query(self, prompt : str) -> str:
+        raise "This method should not be called because now we are using batch_query_model that calls on batch_completion from litellm for both TogetherAI and OpenAI"
         response = together.Complete.create(
             prompt = prompt,
             model = self.model_name,
@@ -102,10 +103,12 @@ class OpenAIModel(LanguageModel):
     
     @backoff.on_exception(backoff.expo, openai.error.RateLimitError, max_tries=10)
     def query(self, prompt):
+        raise "This method should not be called because now we are using batch_query_model that calls on batch_completion from litellm for both TogetherAI and OpenAI"
         message = [{"role": "user", "content": prompt}]
         # Estimate the number of tokens used
         estimated_tokens = len(prompt.split()) * 3
         # Set the rate limits for different models
+        # Note this is wrong because model should not be hardcoded here but rather use self variable
         rate_limit = 10_000 if "gpt-4" in model else 90_000
         
         try_cnt = 0
@@ -138,6 +141,7 @@ class DebugModel(LanguageModel):
         return f"DebugModel(model_name={self.model_name}, generation_params={self.generation_params})"
     
     def query(self, prompt : str) -> str:
+        raise "This method should not be called because now we are using batch_query_model that calls on batch_completion from litellm for both TogetherAI and OpenAI"
         print(f"Model Recieved: {prompt}")
     
 
@@ -158,6 +162,7 @@ if __name__ == "__main__":
     )
 
 def query_model(model, prompt, model_temperature=.2, timeout=10):
+    raise "This method should not be called because now we are using batch_query_model that calls on batch_completion from litellm for both TogetherAI and OpenAI"
     message = [{"role": "user", "content": prompt}]
     # Estimate the number of tokens used
     estimated_tokens = len(prompt.split()) * 3

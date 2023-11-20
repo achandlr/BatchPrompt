@@ -1,5 +1,8 @@
 # from src.experiments.k_shot_experiment_configs import * # config_param_list, oai_gen_params, config_to_answer_type
 # from src.experiments.k_shot_experiment import * # BatchPromptExperiment,BatchPromptingExperimentConfig
+import warnings
+from dill._dill import PicklingWarning
+
 from src.utils.evaluation import CodeEvaluator, Evaluation
 import re
 from typing import Callable, List, Dict, Any, Tuple, Union, Optional, TypedDict
@@ -17,9 +20,80 @@ from pathlib import Path
 # from concurrent.futures import ThreadPoolExecutor, TimeoutError
 import time
 import math
+from src.experiments.k_shot_experiment_configs import task_description_rte, task_description_COMMON_SENSE, task_description_MNLI, task_description_GSM8K
+import numpy as np
+from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+import random
 
+def get_stats(y_pred, y_true, answer_type):
+    results = {}
+    try:        
+        def _calculate_f1(y_pred, y_true):
+            if len(set(y_true)) > 2:  # More than two classes indicates multiclass classification
+                return f1_score(y_true, y_pred, average='weighted')
+            else:
+                return f1_score(y_true, y_pred, average='binary')
+            
+        # def calculate_sensitivity(y_pred, y_true):
+        #     cm = confusion_matrix(y_true, y_pred)
+        #     TP = cm[1, 1]
+        #     FN = cm[1, 0]
+        #     return TP / (TP + FN)
+        
+        # Initialize the results dictionary
+        
+        # Calculate the cannot_parse_proportion
+        cannot_parse_count = sum(pred is None for pred in y_pred)
+        total_predictions = len(y_pred)
+        cannot_parse_proportion = cannot_parse_count / total_predictions
+        
+        # Add the cannot_parse_proportion to the results
+        results['cannot_parse_proportion'] = cannot_parse_proportion
+        
+        # Set1: Skip all None values
+        valid_indices = [i for i, pred in enumerate(y_pred) if pred is not None]
+        valid_y_pred = np.array([y_pred[i] for i in valid_indices])
+        valid_y_true = np.array([y_true[i] for i in valid_indices])
+        results['none_is_skipped'] = {
+            'Accuracy': accuracy_score(valid_y_pred, valid_y_true)
+        }
+        if answer_type in ['binary', 'categorical']:
+            results['none_is_skipped']['F1'] = _calculate_f1(valid_y_pred, valid_y_true)
+            if answer_type == "binary":
+                results['none_is_skipped']["confusion_matrix"] = confusion_matrix(valid_y_pred, valid_y_true)
+                # results['none_is_skipped']['Sensitivity'] = calculate_sensitivity(valid_y_pred, valid_y_true)
 
-DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT = 32
+        # Set2: Count None as wrong
+        wrong_label = next(iter(set(y_true) - set(y_pred)), next(iter(set(y_true))))
+        y_pred_set2 = [pred if pred is not None else wrong_label for pred in y_pred]
+        results['none_is_wrong'] = {
+            'Accuracy': accuracy_score(y_pred_set2, y_true)
+        }
+        if answer_type in ['binary', 'categorical']:
+            results['none_is_wrong']['F1'] = _calculate_f1(y_pred_set2, y_true)
+            if answer_type == "binary":
+                results['none_is_wrong']["confusion_matrix"] = confusion_matrix(y_pred_set2, y_true)
+                # results['none_is_wrong']['Sensitivity'] =calculate_sensitivity(y_pred_set2, y_true)
+
+        # Set3: Guess randomly if None
+        y_pred_set3 = [pred if pred is not None else random.choice(list(set(y_true))) for pred in y_pred]
+        results['none_is_random'] = {
+            'Accuracy': accuracy_score(y_pred_set3, y_true)
+        }
+        if answer_type in ['binary', 'categorical']:
+            results['none_is_random']['F1'] = _calculate_f1(y_pred_set3, y_true)
+            if answer_type == "binary":
+                results['none_is_random']["confusion_matrix"]  = confusion_matrix(y_pred_set3, y_true)
+                # results['none_is_random']['Sensitivity'] = calculate_sensitivity(y_pred_set3, y_true)
+    except Exception as e:
+        print(e)
+    return results
+
+# fake = get_stats([0, None, None, 1, 1, 1], [1,1,0,1,1,1],  "binary")
+# fake = get_stats([0, None, None, 1, 1, 1], [1,1,0,1,1,1],  "categorical")
+# fake = get_stats([None, None, None, None, None, None], [1,1,0,1,1,1],  "categorical")
+
+DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT = 128
 
 
 class TogetherAIGenerationParameters(TypedDict):
@@ -438,6 +512,8 @@ class BatchPromptExperiment:
                 split=dataset_config.split_name,
             )
             if dataset_config.task_name_for_CoT_filter != None:
+                warnings.filterwarnings('ignore', category=PicklingWarning)
+
                 dataset = dataset.filter(lambda example: example['task'] == dataset_config.task_name_for_CoT_filter)
                 if dataset_config.task_name_for_CoT_filter =="rte":
                     dataset = dataset.filter(lambda example: "Question with options: can we draw the following hypothesis from the context?" in example['source'])
@@ -499,10 +575,15 @@ class BatchPromptExperiment:
         messages = [[{"role": "user", "content": i[1]}] for i in model_inputs]
         attempt_cnt = 0
         max_attempts = 10 
-        model_query_batch_size = 10
+        if "llama" in self.model.model_name:
+            model_query_batch_size = 2
+        else:
+            model_query_batch_size = 10
         results = []
         message_sublists = [messages[i:i+model_query_batch_size] for i in range(0, len(messages), model_query_batch_size)]
-        for batched_messages in message_sublists:
+        for i, batched_messages in enumerate(message_sublists):
+            if "llama" in self.model.model_name:
+                time.sleep(2.2)
             while attempt_cnt < max_attempts:
                 try:
                     responses = batch_completion(
@@ -518,7 +599,7 @@ class BatchPromptExperiment:
                 except Exception as e:
                     attempt_cnt += 1
                     print(f"Error {str(e)} occurred. Retrying...")
-                    time.sleep(120* attempt_cnt)
+                    time.sleep(30* attempt_cnt)
             if attempt_cnt == max_attempts:
                 curr_results = ["" for i in range(len(batched_messages))]
                 results.extend(curr_results)
@@ -591,11 +672,11 @@ class BatchPromptExperiment:
         # which includes a lambda/function that might be tricky to pickle
         # query model
         batched_model_outputs = self.batch_query_model(batched_model_inputs)
-        if batched_model_inputs:
-            if self.debug.save_batched_model_inputs:
-                pickle.dump((batched_model_inputs), open(self.debug.save_batched_model_inputs, 'wb'))
-            if self.debug.save_batched_model_outputs:
-                pickle.dump((batched_model_outputs), open(self.debug.save_batched_model_outputs, 'wb'))
+        # if batched_model_inputs:
+        #     if self.debug.save_batched_model_inputs:
+        #         pickle.dump((batched_model_inputs), open(self.debug.save_batched_model_inputs, 'wb'))
+        #     if self.debug.save_batched_model_outputs:
+        #         pickle.dump((batched_model_outputs), open(self.debug.save_batched_model_outputs, 'wb'))
 
 
         return (batched_model_inputs, batched_model_outputs, answers_dict)
@@ -1022,117 +1103,7 @@ examples_config_rte = DatasetConfig(
 
 # """
 # NOTE I BELIEVE THIS COULD BE THE GOOD ONE FOR GPT ETC
-task_description_rte = '''**Objective**: Your task is to solve a set of recognizing textual entailment (RTE) questions in a batch. You will be given {{batch_size}} sentence pairs from the Textual Entailment Recognition dataset each time, as input. Your goal is to classify each sentence pair into two classes. You must answer all questions in the batch. The total number of questions in the batch is defined as batch_size = {batch_size}.
 
-An answer of 0 means that the given Hypothesis and Premise logically entail each other. 
-An answer of 1 means the given Hypothesis and Premise do NOT entail each other.
-
-**Method**: Use your expertise in NLP and sentence pair relationship annotation to perform a sequence of logical evaluations for solving these questions.
-
-#### Instructions:
-
-1. **Intermediate Reasoning**: Include all the steps you took to evaluate the relationship between the Premise and Hypothesis. This could include identifying key phrases, contradictions, or logical connections.
-
-2. **Batch Size**: You must provide an answer for each question in the batch, ensuring that the number of answers you provide exactly matches the specified `{batch_size}`.
-
-3. **Handling Ambiguities**: Answer every question even if you are unsure about the answer. Never answer with saying the answer is ambiguous or that you can't answer a question. Even if you are not sure, ensure that for every answer, you output the "The answer is 0" or "The answer is 1".
-
-#### Input Format:
-- Questions will be presented in a batch. Each question will include a sentence pair labeled as "Premise" and "Hypothesis" and will be prefixed with its index, starting from 0, like so:
-P[0]: {{Premise_0_Text}}
-H[0]: {{Hypothesis_0_Text}}
-...
-P[{{batch_size - 1}}]: {{Premise_{{batch_size - 1}}_Text}}
-H[{{batch_size - 1}}]: {{Hypothesis_{{batch_size - 1}}_Text}}
-
-#### Output Format:
-- You must adhere to the following format rigorously for each answer:
-A[index]: {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}
-- `index`: This is the index of the question you are answering. It must be prefixed with 'A' and enclosed in square brackets.
-- `{{Intermediate_Reasoning}}`: This is where you provide all the intermediate steps that led you to the final answer.
-- `{{Answer_Integer}}`: This is the final integer answer to the question, representing the class into which the sentence pair falls.
-4. **Answer Formatting**: After each intermediate reasoning, you must conclude with a definitive statement in the form of "The answer is 0" or "The answer is 1" without any variation. This precise phrasing is crucial and must be used consistently for each response to ensure clarity and uniformity in the results. Deviations from this format will be considered incorrect, even if the classification is accurate.
-
-The phrase 'The answer is' must directly precede each integer answer and come after the intermediate reasoning, separated by a semicolon. Please adhere strictly to these guidelines to ensure the entire output is in the desired format. Output all answers, ensuring that {batch_size} answers are provided in our desired format.
-{few_shot_examples}
-Batched Questions to Answer:
-'''
-
-# task_description_COMMON_SENSE = '''You are tasked with answering multiple-choice questions that require both contextual understanding and general world knowledge. Each question will have five options labeled 'a', 'b', 'c', 'd', and 'e'. Your job is to select the most appropriate answer by outputting the letter corresponding to that option. " These questions are part of the CommonsenseQA dataset, designed to test your ability to answer questions that often require prior knowledge. Instruction: For each question in the batch, provide a single answer, following the format A[index]: answer. Output only the answers with the associated index in "A[idx]: answer" format. '''
-task_description_COMMON_SENSE = '''
-### **Objective**: Your task is to solve a set of multiple-choice questions from the CommonsenseQA dataset in a batch. CommonsenseQA is a new multiple-choice question answering dataset that requires different types of commonsense knowledge to predict the correct answers . You will be given `{{batch_size}}` questions each time, as input. These questions are designed to test your ability to answer queries that often require contextual understanding and general world knowledge. Your goal is to select the letter corresponding to the most appropriate answer among five options labeled 'a', 'b', 'c', 'd', and 'e' for each question in the batch. You must answer all questions in the batch. The total number of questions in the batch is defined as `batch_size = {{batch_size}}`.
-
-An answer of 'A' means you believe option 'A' is the most appropriate answer.
-An answer of 'B' means you believe option 'B' is the most appropriate answer.
-An answer of 'C' means you believe option 'C' is the most appropriate answer.
-An answer of 'D' means you believe option 'D' is the most appropriate answer.
-An answer of 'E' means you believe option 'E' is the most appropriate answer.
-
-**Method**: Use your expertise in NLP and contextual understanding to perform a sequence of logical evaluations for solving these questions.
-
-#### Instructions:
-
-1. **Intermediate Reasoning**: Include all the steps you took to arrive at your answer. This could include identifying key phrases, contradictions, or logical connections that led you to choose a particular option.
-
-2. **Batch Size**: You must provide an answer for each question in the batch, ensuring that the number of answers you provide exactly matches the specified `{{batch_size}}`.
-
-3. **Handling Ambiguities**: Answer every question even if you are unsure about the answer.
-
-#### Input Format:
-- Questions will be presented in a batch. Each question will be prefixed with its index, starting from 0, like so:
-Q[0]: {{Question_0_Text}}
-Q[1]: {{Question_1_Text}}
-...
-Q[{{batch_size - 1}}]: {{Question_{{batch_size - 1}}_Text}}
-
-#### Output Format:
-- You must adhere to the following format rigorously for each answer:
-A[index]: {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}
-- `index`: This is the index of the question you are answering. It must be prefixed with 'A' and enclosed in square brackets.
-- `{{Intermediate_Reasoning}}`: This is where you provide all the intermediate steps that led you to the final answer.
-- `{{Answer_Integer}}`: This is the final letter answer to each question.
-4. **Answer Formatting**: After each intermediate reasoning, you must conclude with a definitive statement in the form of "The answer is A", "The answer is B", "The answer is C", "The answer is D", or "The answer is E" without any variation. This precise phrasing is crucial and must be used consistently for each response to ensure clarity and uniformity in the results. Deviations from this format will be considered incorrect, even if the classification is accurate.
-The phrase 'The answer is' must directly precede each letter answer and come after the intermediate reasoning, separated by a semicolon. Ensure you output A[index] for each question before outputting {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}. Please adhere strictly to these guidelines to ensure the entire output is in the desired format. Output all answers, ensuring that {batch_size} answers are provided in our desired format.
-{few_shot_examples}
-Batched Questions to Answer:
-'''
-
-
-task_description_MNLI = '''### **Objective**: Your task is to solve a set of MultiNLI (MNLI) questions in a batch. You will be given `{{batch_size}}` premise-hypothesis pairs from the MNLI dataset as input. Your goal is to classify each pair into one of three classes: entailment, neutral, or contradiction. You must answer all questions in the batch. The total number of questions in the batch is defined as `batch_size = {{batch_size}}`.
-
-An answer of 0 means the premise entails the hypothesis, indicating that if the premise is true, the hypothesis must also be true. In this case, the information in the hypothesis is a logical subset of the information in the premise.
-An answer of 1 means the relationship between the premise and the hypothesis is neutral, suggesting that the truth of the premise neither guarantees nor contradicts the truth of the hypothesis. The hypothesis could be either true or false regardless of the premise's truth value.
-An answer of 2 means the premise contradicts the hypothesis, implying that both cannot be true at the same time. If the premise is true, the hypothesis must necessarily be false, and vice versa.
-
-**Method**: Use your expertise in NLP and sentence pair relationship annotation to perform a sequence of logical evaluations relationship between each Premise and Hypothesis pair. Given a premise sentence and a hypothesis sentence, the task is to predict whether the premise entails the hypothesis (entailment), contradicts the hypothesis (contradiction), or neither (neutral).
-
-#### Instructions:
-
-1. **Intermediate Reasoning**: Include all the steps you took to evaluate the relationship between the Premise and Hypothesis. This could include identifying key phrases, contradictions, or logical connections.
-
-2. **Batch Size**: You must provide an answer for each question in the batch, ensuring that the number of answers you provide exactly matches the specified `{batch_size}`.
-
-3. **Handling Ambiguities**: Answer every question even if you are unsure about the answer. If you are unsure, choose the answer that is most likely to be correct. And make sure every answer is 0, 1, or 2.
-
-#### Input Format:
-- Questions will be presented in a batch. Each question will include a sentence pair labeled as "Premise" and "Hypothesis" and will be prefixed with its index, starting from 0, like so:
-P[0]: {{Premise_0_Text}}
-H[0]: {{Hypothesis_0_Text}}
-...
-P[{{batch_size - 1}}]: {{Premise_{{batch_size - 1}}_Text}}
-H[{{batch_size - 1}}]: {{Hypothesis_{{batch_size - 1}}_Text}}
-
-#### Output Format:
-- You must adhere to the following format rigorously for each answer:
-A[index]: {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}
-- `index`: This is the index of the question you are answering. It must be prefixed with 'A' and enclosed in square brackets.
-- `{{Intermediate_Reasoning}}`: This is where you provide all the intermediate steps that led you to the final answer.
-- `{{Answer_Integer}}`: This is the final integer answer to the question, representing the class into which the sentence pair falls.
-4. **Answer Formatting**: After each intermediate reasoning, you must conclude with a definitive statement in the form of "The answer is 0", "The answer is 1", or "The answer is 2" without any variation. This precise phrasing is crucial and must be used consistently for each response to ensure clarity and uniformity in the results. Deviations from this format will be considered incorrect, even if the classification is accurate.
-The phrase 'The answer is' must directly precede each integer answer and come after the intermediate reasoning, separated by a semicolon. Please adhere strictly to these guidelines to ensure the entire output is in the desired format. Output all answers, ensuring that {batch_size} answers are provided in our desired format.
-{few_shot_examples}
-Batched Questions to Answer:
-'''
 
 # task_description_mnli = '''**Objective**: Your task is to solve a set of recognizing textual entailment (RTE) questions in a batch. You will be given {{batch_size}} sentence pairs from the Textual Entailment Recognition dataset each time, as input. Your goal is to classify each sentence pair into two classes. You must answer all questions in the batch. The total number of questions in the batch is defined as batch_size = {batch_size}.
 
@@ -1286,41 +1257,7 @@ examples_config_GSM8K = DatasetConfig(
 # {few_shot_examples}
 # Batched Questions to Answer:
 # '''
-task_description_GSM8K = '''
-**Objective**: Your task is to solve a set of math questions in a batch. You will be given a series of questions from the GSM8K dataset as input, totaling {{batch_size}}. The goal is to accurately respond to each one, providing clear reasoning and the final integer answer.
 
-**Complexity**: Expect to engage in a reasoning process that involves 2 to 8 steps to derive the answer for each question.
-
-**Method**: Employ basic arithmetic operations to execute a series of calculations that lead to the solution of each question.
-
-#### Instructions:
-
-1. **Intermediate Reasoning**: For each question, detail all the evaluative steps you've taken to understand the premise and formulate the hypothesis. This may include parsing key phrases, identifying contradictions, or establishing logical links.
-
-2. **Batch Size**: You are required to provide an answer for each question within the batch, with the total number of provided answers matching {{batch_size}}.
-
-3. **Handling Ambiguities**: Even in cases of uncertainty, provide an answer, ensuring it is the most likely integer estimate. Include the reasoning that led to this estimate.
-
-#### Input Format:
-- The batch of questions will be presented with each question prefixed by its index, starting from 0:
-Q[0]: {{Question_0_Text}}
-Q[1]: {{Question_1_Text}}
-...
-Q[{{batch_size - 1}}]: {{Question_{{batch_size - 1}}_Text}}
-
-#### Output Format:
-- Adhere to the following structure for each response without deviation:
-A[index]: {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}
-- `index`: The index of the question being answered, prefixed with 'A' and enclosed in square brackets.
-- `{{Intermediate_Reasoning}}`: The detailed steps and logical progression that led to the conclusion.
-- `{{Answer_Integer}}`: The final answer must be an integer, without any extraneous characters, punctuation, quotations, symbols, or units.
-
-Each response should begin with "A[index]" followed by the intermediate reasoning and the final integer answer, formatted as "The answer is x"; 'x' being the integer answer. Maintain this format consistently across all responses.
-
-Please ensure all answers are provided according to these guidelines, with {{batch_size}} answers formatted in the required manner.
-{few_shot_examples}
-Batched Questions to Answer:
-'''
 
 
 
@@ -1428,14 +1365,14 @@ config_to_answer_type = {"GSM8K": "numerical",
                 "MNLI": "binary",
                 "RTE": "categorical"}
 config_param_list = { 
-    # "rte": [questions_config_rte, examples_config_rte, task_description_rte, rte_question_format, rte_answer_format, rte_example_question_format],
+    "rte": [questions_config_rte, examples_config_rte, task_description_rte, rte_question_format, rte_answer_format, rte_example_question_format],
     "GSM8K": [questions_config_GSM8K, examples_config_GSM8K, task_description_GSM8K, gsm8k_question_format, gsm8k_answer_format, gsm8k_example_question_format],
     # # "MBPP": [questions_config_MBPP, examples_config_MBPP, task_description_MBPP, mbpp_question_format, mbpp_answer_format],
     "MNLI": [questions_config_MNLI, examples_config_MNLI, task_description_MNLI, mnli_question_format, mnli_answer_format, mnli_example_question_format],
     # #"GSM8K_HARD": [questions_config_GSM8K_HARD, examples_config_GSM8K_HARD, task_description_GSM8K_HARD, gsm8k_question_format, gsm8k_answer_format],
     "COMMON_SENSE": [questions_config_COMMON_SENSE, examples_config_COMMON_SENSE, task_description_COMMON_SENSE, commonsense_question_format, commonsense_answer_format, commonsense_example_question_format],
-    # TODO: Below is an example config. Maybe not the best design choice. We need to decide how to best make a multi_task_config!
-    "MULTI_TASK" : [{questions_config_rte, questions_config_GSM8K, questions_config_MNLI, questions_config_COMMON_SENSE}, {examples_config_rte, examples_config_GSM8K, examples_config_MNLI, examples_config_COMMON_SENSE}, {rte_question_format, gsm8k_question_format, mnli_question_format, commonsense_question_format}, {rte_answer_format, gsm8k_answer_format, mnli_answer_format, commonsense_answer_format}]
+    # # TODO: Below is an example config. Maybe not the best design choice. We need to decide how to best make a multi_task_config!
+    # "MULTI_TASK" : [{questions_config_rte, questions_config_GSM8K, questions_config_MNLI, questions_config_COMMON_SENSE}, {examples_config_rte, examples_config_GSM8K, examples_config_MNLI, examples_config_COMMON_SENSE}, {rte_question_format, gsm8k_question_format, mnli_question_format, commonsense_question_format}, {rte_answer_format, gsm8k_answer_format, mnli_answer_format, commonsense_answer_format}]
 }
 
 def extract_math_answers(text):
@@ -1682,19 +1619,23 @@ def get_index_to_ground_truth(answers_dict, task_name):
 
 def extract_last_integer(text):
     # Regex pattern to match the desired number format
-    pattern = r"answer is\s*[\$\'_*\"]*(-?\d{1,3}(?:,\d{3})*|\d+)"
+    pattern = r"answer is\s*[\[\$\'_*\"]*(-?\d{1,3}(?:,\d{3})*|\d+)"
+
 
     # Find all matches
     matches = re.findall(pattern, text)
     if not matches:
-        return None
+        pattern = r"answer is\s*.*?(-?\d{1,3}(?:,\d{3})*|\d+)"
+        matches = re.findall(pattern, text)
+        if not matches:
+            return None
     # Remove commas and other formatting to clean the matched numbers
     cleaned_matches = [match.replace(',', '') for match in matches]
     
     # Adjust the matches to retain the negative sign if present
     final_matches = [f"-{match}" if text.find("-" + match) != -1 else match for match in cleaned_matches]
     
-    answer = final_matches[-1]
+    answer = int(final_matches[-1])
     return answer
 
 # def extract_last_integer(text):
@@ -1832,25 +1773,74 @@ def run_batched_tests(config, config_to_answer_type):
     task_to_stats ={}
 
     # TODO: uncomment the following out
-    # batch_sizes = [1, 2, 4, 8, 16]
+    batch_sizes = [1, 4, 8]
 
     # TODO: Delete this line
-    batch_sizes = [1,4]
+    # batch_sizes = [8]
 
     # TODO: uncomment the following out
-    # k_shot_sizes = [0,1,4,8]
+    k_shot_sizes = [0,1, 6]
+    # k_shot_sizes = 2
 
+# 'gpt-4-1106-preview': 
+# {"param_object": OpenAIGenerationParameters(
+#     # model_name='gpt-3.5-turbo',
+#     # model_name='gpt-3.5-turbo-16k',
+#     model_name='gpt-4-1106-preview',
+#     temperature=0,
+#     max_tokens=None,
+#     frequency_penalty=1.0,),
+# "model_api": ModelAPIType.OPEN_AI},
+
+    model_params = {
+                    "gpt-3.5-turbo-16k": 
+                    {"param_object": 
+                        OpenAIGenerationParameters(
+                        # model_name='gpt-3.5-turbo',
+                        model_name='gpt-3.5-turbo-16k',
+                        # model_name='gpt-4',
+                        temperature=0,
+                        max_tokens=None,
+                        frequency_penalty=1.0,), 
+                    "model_api": ModelAPIType.OPEN_AI}, 
+                    # 'gpt-4': 
+                    # {"param_object": OpenAIGenerationParameters(
+                    #     # model_name='gpt-3.5-turbo',
+                    #     # model_name='gpt-3.5-turbo-16k',
+                    #     model_name='gpt-4',
+                    #     temperature=0,
+                    #     max_tokens=None,
+                    #     frequency_penalty=1.0,),
+                    # "model_api": ModelAPIType.OPEN_AI},
+                    "LLAMA-2-70B": {
+                        "param_object": TogetherAIGenerationParameters(
+                        model_name='together_ai/togethercomputer/llama-2-70b-chat',
+                        temperature = 0,
+                        # temperature=0.6,
+                        # max_tokens=64,
+                        max_tokens=2000,
+                        frequency_penalty=1.0,
+                        ),
+                        "model_api": ModelAPIType.TOGETHER_AI}
+                    }
     # TODO: Delete this line
-    k_shot_sizes = [0]
+    # k_shot_sizes = [4]
     # TODO: This overestimates if DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT> dataset size
-    total_num_batched_complete_api_calls = len(k_shot_sizes)* sum( [-(-max(1,.1*DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT)//batch_size) for batch_size in batch_sizes])
-    expected_execution_time_minutes = total_num_batched_complete_api_calls * 10 / 60
+    total_num_batched_complete_api_calls = len(model_params.keys()) * len(k_shot_sizes)* sum( [-(-max(1,.1*DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT)//batch_size) for batch_size in batch_sizes])
+    estimated_batch_response_time = 60 # in seconds
+    expected_execution_time_minutes = total_num_batched_complete_api_calls * estimated_batch_response_time / 60
+    GPT_COST_USD_PER_QUERY = .01
+    NUM_CALLS_IN_BATCH = 10
+    expected_cost_USD = 2 * GPT_COST_USD_PER_QUERY * NUM_CALLS_IN_BATCH * total_num_batched_complete_api_calls
     start_time = time.time()
     print(f"Number of BatchCompleteAPI Calls: {total_num_batched_complete_api_calls}")
     print(f"Expected execution time in minutes: {expected_execution_time_minutes}" )
+    print(f"Expected API Call Cost: {expected_cost_USD}" )
+    
     # batch_sizes = [1, 2, 4, 8]
     # batch_sizes = [4, 8, 16, 32]
 
+    os.environ['TOGETHERAI_API_KEY'] = read_api_token(Path("data/imported/together_ai_token.txt"))
     os.environ['OPENAI_API_KEY'] = read_api_token(Path("data/imported/open_ai_token.txt"))
     for task_name, configs in config_param_list.items():
         # if task_name.upper() == "RTE":
@@ -1859,82 +1849,98 @@ def run_batched_tests(config, config_to_answer_type):
         #     continue
         for k_shot_size in k_shot_sizes:
             for batch_size in batch_sizes:
-                # llama_2_70B_gen_params = TogetherAIGenerationParameters(
-                # model_name='togethercomputer/llama-2-70b-chat',
-                # temperature = 0,
-                # # temperature=0.6,
-                # # max_tokens=64,
-                # max_tokens=None,
-                # frequency_penalty=1.0,
-                # )
-                oai_gen_params = OpenAIGenerationParameters(
-                        model_name='gpt-3.5-turbo-16k',
-                        # model_name='gpt-4',
-                        temperature=0,
-                        max_tokens=None,
-                        frequency_penalty=1.0,
+                for model_name, model_param in model_params.items():
+                    # These two checks are to ensure that we don't exceed the context window of the models (and also to reduce API calls)
+                    if model_name == "LLAMA-2-70B" and k_shot_size + batch_size > 5:
+                        continue
+                    elif model_name == "gpt-4" and k_shot_size + batch_size > 10:
+                        continue
+                    elif k_shot_size + batch_size > 20:
+                        continue
+                    # if model_name == "gpt-4":
+                    #     global DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT
+                    #     DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT = 8
+                    #     if batch_size not in [1,4]:
+                    #         continue
+                    #     if k_shot_size not in [0,6]:
+                    #         continue
+                    # else:
+                    #     DEBUG_NUM_QUESTIONS_WANT_ANSWER_PER_EXPERIMENT = 256
+                    # llama_2_70B_gen_params = TogetherAIGenerationParameters(
+                    # model_name='togethercomputer/llama-2-70b-chat',
+                    # temperature = 0,
+                    # # temperature=0.6,
+                    # # max_tokens=64,
+                    # max_tokens=None,
+                    # frequency_penalty=1.0,
+                    # )
+                    
+                    questions_config, examples_config, task_description, question_format, answer_format , example_question_format = configs
+
+                    config = BatchPromptingExperimentConfig(
+                    questions_dataset_config=questions_config,
+                    examples_dataset_config=examples_config,
+                    task_description=task_description,
+                    pre_question_instructions="Consider the following examples and maintain their formatting.#### Few-Shot Examples for Demonstration:\n(Note: These examples are for illustration only and are not to be answered as part of the task.)\n",
+                    k_shot=k_shot_size,
+                    example_selection=ExampleSelectionType.RANDOM,
+                    # example_selection=None,
+                    question_format = question_format,
+                    example_question_format=example_question_format,
+                    example_answer_format=answer_format,
+                    batch_size=batch_size,
+                    model_api=model_param["model_api"],
+                    # model_api=ModelAPIType.TOGETHER_AI,
+                    generation_params=model_param["param_object"],
+
+                    # generation_params=llama_2_70B_gen_params,
+                    random_seed=0,
+                    debug=BatchPromptingDebugConfig(
+                            truncate_examples=True,
+                            truncate_batch_queries=True,
+                            save_batched_model_inputs=None,
+                            save_batched_model_outputs=None,
+                        )
                     )
-                questions_config, examples_config, task_description, question_format, answer_format , example_question_format = configs
+                    experiment = BatchPromptExperiment(config)
+                    batched_model_inputs, batched_model_outputs, answers_dict = experiment.execute()
+                    if task_name == "MBPP":
+                        evaluator = CodeEvaluator()
+                        raise NotImplementedError()
+                        # mbpp_code_example = mbpp['train']['code'][index]
+                        # mbpp_test_cases_example = mbpp['train']['test_list'][index]
+                        # result = evaluator.run_code_and_tests(mbpp_code_example, mbpp_test_cases_example)
+                    else:
+                        pred, ground_truth = get_pred_ground_truth(batched_model_inputs, batched_model_outputs, answers_dict, task_name)
+                        # evaluator = Evaluation()
 
-                config = BatchPromptingExperimentConfig(
-                questions_dataset_config=questions_config,
-                examples_dataset_config=examples_config,
-                task_description=task_description,
-                pre_question_instructions="Consider the following examples and maintain their formatting.#### Few-Shot Examples for Demonstration:\n(Note: These examples are for illustration only and are not to be answered as part of the task.)\n",
-                k_shot=k_shot_size,
-                example_selection=ExampleSelectionType.RANDOM,
-                # example_selection=None,
-                question_format = question_format,
-                example_question_format=example_question_format,
-                example_answer_format=answer_format,
-                batch_size=batch_size,
-                model_api=ModelAPIType.OPEN_AI,
-                # model_api=ModelAPIType.TOGETHER_AI,
-                generation_params=oai_gen_params,
-
-                # generation_params=llama_2_70B_gen_params,
-                random_seed=0,
-                debug=BatchPromptingDebugConfig(
-                        truncate_examples=True,
-                        truncate_batch_queries=True,
-                        save_batched_model_inputs=None,
-                        save_batched_model_outputs=None,
-                    )
-                )
-                experiment = BatchPromptExperiment(config)
-                batched_model_inputs, batched_model_outputs, answers_dict = experiment.execute()
-                if task_name == "MBPP":
-                    evaluator = CodeEvaluator()
-                    raise NotImplementedError()
-                    # mbpp_code_example = mbpp['train']['code'][index]
-                    # mbpp_test_cases_example = mbpp['train']['test_list'][index]
-                    # result = evaluator.run_code_and_tests(mbpp_code_example, mbpp_test_cases_example)
-                else:
-                    pred, ground_truth = get_pred_ground_truth(batched_model_inputs, batched_model_outputs, answers_dict, task_name)
-                    evaluator = Evaluation()
-
-                    # TODO: Delete this line
-                    stat = evaluator.get_stats(y_pred=pred, y_true=ground_truth, answer_type = config_to_answer_type[task_name.upper()])
-                    evaluator.get_stats(y_pred=pred, y_true=ground_truth, answer_type = config_to_answer_type[task_name.upper()])
-                    # TODO: Delete this line
-                    get_pred_ground_truth(batched_model_inputs, batched_model_outputs, answers_dict, task_name)
-                if task_name not in task_to_stats:
-                    task_to_stats[task_name] = {}
-                if k_shot_size not in task_to_stats[task_name]:
-                    task_to_stats[task_name][k_shot_size] = {}
-                if batch_size not in task_to_stats[task_name][k_shot_size]:
-                    task_to_stats[task_name][k_shot_size][batch_size] = {}
-                
-                task_to_stats[task_name][k_shot_size][batch_size]["batched_model_inputs"] = batched_model_inputs
-                task_to_stats[task_name][k_shot_size][batch_size]["batched_model_outputs"] = batched_model_outputs
-                task_to_stats[task_name][k_shot_size][batch_size]["stat"] = stat
-                task_to_stats[task_name][k_shot_size][batch_size]["pred"] = pred
-                task_to_stats[task_name][k_shot_size][batch_size]["ground_truth"] = ground_truth
+                        # TODO: Delete this line
+                        stat = get_stats(y_pred=pred, y_true=ground_truth, answer_type = config_to_answer_type[task_name.upper()])
+                        # evaluator.get_stats(y_pred=pred, y_true=ground_truth, answer_type = config_to_answer_type[task_name.upper()])
+                        # TODO: Delete this line
+                        get_pred_ground_truth(batched_model_inputs, batched_model_outputs, answers_dict, task_name)
+                    if task_name not in task_to_stats:
+                        task_to_stats[task_name] = {}
+                    if k_shot_size not in task_to_stats[task_name]:
+                        task_to_stats[task_name][k_shot_size] = {}
+                    if batch_size not in task_to_stats[task_name][k_shot_size]:
+                        task_to_stats[task_name][k_shot_size][batch_size] = {}
+                    if model_name not in task_to_stats[task_name][k_shot_size][batch_size]:
+                        task_to_stats[task_name][k_shot_size][batch_size][model_name] = {}
+                    
+                    task_to_stats[task_name][k_shot_size][batch_size][model_name]["batched_model_inputs"] = batched_model_inputs
+                    task_to_stats[task_name][k_shot_size][batch_size][model_name]["batched_model_outputs"] = batched_model_outputs
+                    task_to_stats[task_name][k_shot_size][batch_size][model_name]["stat"] = stat
+                    task_to_stats[task_name][k_shot_size][batch_size][model_name]["pred"] = pred
+                    task_to_stats[task_name][k_shot_size][batch_size][model_name]["ground_truth"] = ground_truth
     end_time = time.time()
     print(f"Expected total time taken in minutes: {round(expected_execution_time_minutes)}", )
     print(f"Actual total time taken in minutes: {round((end_time - start_time)/60)}")
-    with open("task_to_stats_rte_gsm8k_mnli_commonsense", 'wb') as f:
+    with open("task_to_stats_rte_gsm8k_mnli_commonsense_all_models", 'wb') as f:
         pickle.dump(task_to_stats, f)
+    with open("task_to_stats_rte_gsm8k_mnli_commonsense_all_models_backup", 'wb') as f:
+        pickle.dump(task_to_stats, f)
+    print(task_to_stats)
     return task_to_stats
 
 if __name__ == "__main__":

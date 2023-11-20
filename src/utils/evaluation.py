@@ -50,10 +50,10 @@ class Evaluation:
         # Add the cannot_parse_proportion to the results
         results['cannot_parse_proportion'] = cannot_parse_proportion
 
-        for i in range(len(y_pred)):
-            if y_pred[i] == None:
-                # None indicates answer can't be parsed, so we fill in non-parseable answers with a dummy value that will be marked as incorrect
-                y_pred[i] = -123456789
+        # for i in range(len(y_pred)):
+        #     if y_pred[i] == None:
+        #         # None indicates answer can't be parsed, so we fill in non-parseable answers with a dummy value that will be marked as incorrect
+        #         y_pred[i] = -123456789
         # Convert input to numpy arrays for easier handling
         y_pred = np.array(y_pred)
         y_true = np.array(y_true)
@@ -61,11 +61,13 @@ class Evaluation:
         # Calculate and store accuracy
         results['Accuracy'] = self._calculate_accuracy(y_pred, y_true)
         
+        if answer_type == "binary":
+            results.update(self._calculate_confusion_elements(y_pred, y_true))
+            results['Sensitivity'] = self._calculate_sensitivity(y_pred, y_true)
+
         # If the answer_type is binary or categorical, calculate the additional metrics
         if answer_type in ['binary', 'categorical']:
             results['F1'] = self._calculate_f1(y_pred, y_true)
-            results['Sensitivity'] = self._calculate_sensitivity(y_pred, y_true)
-            results.update(self._calculate_confusion_elements(y_pred, y_true))
         
         return results
 
