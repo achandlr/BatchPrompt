@@ -1048,12 +1048,12 @@ class BatchPromptTemplate:
 # from src.experiments.k_shot_experiment import *
 from src.utils.parsing_functions import * 
 
-oai_gen_params = OpenAIGenerationParameters(
-            model_name='gpt-3.5-turbo',
-            temperature=0.6,
-            max_tokens=64,
-            frequency_penalty=1.0,
-        )
+# oai_gen_params = OpenAIGenerationParameters(
+#             model_name='gpt-3.5-turbo',
+#             temperature=0.6,
+#             max_tokens=64,
+#             frequency_penalty=1.0,
+#         )
 
 questions_config_rte = DatasetConfig(
     dataset=DatasetType.RTE,
