@@ -637,11 +637,8 @@ def run_experiments():
         DatasetType.RTE,
         DatasetType.MNLI,
     ]
-
-    dataset_combinations = itertools.chain([
-        itertools.combinations(dataset_types, i)
-        for i in [1,2,3,4]
-    ])
+    
+    dataset_combinations = list(itertools.chain(*list(itertools.combinations(dataset_types, i) for i in [1,2,3,4])))
 
     dataset_combination_to_output = {}
     for dataset_combination in dataset_combinations:
