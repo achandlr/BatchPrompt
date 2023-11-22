@@ -559,6 +559,7 @@ class MultiTaskBatchPromptTemplate:
 
 {io_instructions}
 
+Batched Questions to Answer:
 {batched_questions}'''.format(
             objective_instructions=objective_instructions.format(batch_size=self.num_questions),
             task_and_token_descriptions=task_descriptions,
