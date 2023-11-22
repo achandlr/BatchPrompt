@@ -602,7 +602,11 @@ GSM8K: Instruction - Your task is to solve a set of math questions in a batch.
 GSM8K: Method - Use basic arithmetic operations to perform a sequence of calculations for solving these questions.
 GSM8K: Intermediate Reasoning -  Each question in the batch will require you to perform between 2 and 8 steps to arrive at the final answer.
 GSM8K: Output Meaning - Each answer is an integer that is the answer to the question.''',
-    DatasetType.RTE : "", 
+    DatasetType.RTE : '''\
+RTE: Instruction - Your task is to solve a set of recognizing textual entailment (RTE) questions in a batch. You will be given {{batch_size}} sentence pairs from the Textual Entailment Recognition dataset each time, as input. Your goal is to classify each sentence pair into two classes.
+RTE: Method - Use your expertise in NLP and sentence pair relationship annotation to perform a sequence of logical evaluations for solving these questions.
+RTE: Intermediate Reasoning - Include all the steps you took to evaluate the relationship between the Premise and Hypothesis. This could include identifying key phrases, contradictions, or logical connections.
+RTE: Output Meaning - An answer of 0 signifies entailment between the Hypothesis and Premise, while 1 signifies non-entailment.''', 
     DatasetType.MNLI : '''\
 MNLI: Instruction - Your task is to solve a set of MultiNLI (MNLI) questions in a batch.  You will be given premise-hypothesis pairs from the MNLI dataset as input. Your goal is to classify each pair into one of three classes: entailment, neutral, or contradiction.
 MNLI: Method - Use your expertise in NLP and sentence pair relationship annotation to perform a sequence of logical evaluations relationship between each Premise and Hypothesis pair. Given a premise sentence and a hypothesis sentence, the task is to predict whether the premise entails the hypothesis (entailment), contradicts the hypothesis (contradiction), or neither (neutral).
@@ -612,15 +616,48 @@ An answer of 1 means the relationship between the premise and the hypothesis is 
 An answer of 2 means the premise contradicts the hypothesis, implying that both cannot be true at the same time. If the premise is true, the hypothesis must necessarily be false, and vice versa.'''
 }
 
+def gsm8k_question_format(example, i):
+    example_question_format = f"Q[{i}][GSM8K] {example['question']}"
+    return example_question_format
+
+def commonsense_question_format(example, i):
+        prompt = f"Q[{i}][COMMON_SENSE] {example['question']}\n"
+        prompt += "\n".join(
+            [f"{label}: {text}" for label, text in zip(example["choices"]["label"], example["choices"]["text"])]
+        )
+        return prompt
+
+def rte_question_format(example, i): 
+    return f"Q[{i}][RTE]\nP: {example['sentence1']}\nH: {example['sentence2']}"
+
+def mnli_question_format(example, i): 
+    return f"Q[{i}][MNLI]\nP: {example['premise']}\nH: {example['hypothesis']}"
+
 QUESTION_FORMAT_FUNCTIONS = {
-    DatasetType.COMMON_SENSE : lambda example, i: f"",
-    DatasetType.GSM8K : lambda example, i: f"",
-    DatasetType.RTE : lambda example, i: f"",
-    DatasetType.MNLI : lambda example, i: f"",
+    DatasetType.COMMON_SENSE : commonsense_question_format,
+    DatasetType.GSM8K : gsm8k_question_format,
+    DatasetType.RTE : rte_question_format,
+    DatasetType.MNLI : mnli_question_format,
 }
 
-IO_INSTRUCTIONS = ""
-OBJECTIVE_INSTRUCTIONS = ""
+IO_INSTRUCTIONS = """\
+#### Input Format:
+- Questions will be presented in a batch. Each question will be prefixed with its index, starting from 0, like so:
+Q[0]: {{Question_0_Text}}
+Q[1]: {{Question_1_Text}}
+...
+Q[{{batch_size - 1}}]: {{Question_{{batch_size - 1}}_Text}}
+
+#### Output Format:
+- You must adhere to the following format rigorously for each answer:
+A[index]: {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}
+- `index`: This is the index of the question you are answering. It must be prefixed with 'A' and enclosed in square brackets.
+- `{{Intermediate_Reasoning}}`: This is where you provide all the intermediate steps that led you to the final answer.
+- `{{Answer_Integer}}`: This is the final integer answer to each question.
+
+The phrase 'The answer is' must directly precede each integer answer and come after the intermediate reasoning, separated by a semicolon. Ensure you output A[index] for each question before outputting {{Intermediate_Reasoning}}; The answer is {{Answer_Integer}}. Please adhere strictly to these guidelines to ensure the entire output is in the desired format. Output all answers, ensuring that exactly {batch_size} answers are provided in our desired format. Do not include ANY reasoning after "The answer is", just the designated answer symbol."""
+
+OBJECTIVE_INSTRUCTIONS = "Objective: Your task is to solve a variety of questions across multiple domains in a single batch operation. You will be given a number of questions, each associated with a specific task domain, and your goal is to answer each question according to its domain while adhering to the desired output format. The total number of questions in the batch to answer is defined as batch_size = {batch_size}."
 
 oai_gen_params = OpenAIGenerationParameters(
     model_name='gpt-3.5-turbo',
@@ -630,7 +667,7 @@ oai_gen_params = OpenAIGenerationParameters(
 )
 
 def run_experiments():
-    batch_sizes = []
+    batch_size = 4
     dataset_types = [
         DatasetType.COMMON_SENSE,
         DatasetType.GSM8K,
@@ -654,7 +691,7 @@ def run_experiments():
             objective_instructions=OBJECTIVE_INSTRUCTIONS,
             io_instructions=IO_INSTRUCTIONS,
             k_shot=0,
-            batch_size=4,
+            batch_size=batch_size,
             question_format={
                 dataset_type: QUESTION_FORMAT_FUNCTIONS[dataset_type]
                 for dataset_type in dataset_combination
