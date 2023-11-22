@@ -400,27 +400,53 @@ def batch_query_model(model_inputs):
     # returns a list of batches of questions and their associated ids
     def batch_questions(self) -> List[Tuple[List[MT_ID_TYPE], List[MT_EXAMPLE_TYPE]]]:
         #TODO: Should we truncate the longer dataset to have an equal number of examples per dataset?
-        all_questions : List[MT_EXAMPLE_TYPE] = []
-        ids : List[MT_ID_TYPE] = []
+        all_questions : Dict[DatasetType, MT_EXAMPLE_TYPE] = {}
+        ids : Dict[DatasetType, MT_ID_TYPE] = {}
         for dataset_key, dataset in self.questions.items():
+            all_questions[dataset_key] = []
+            ids[dataset_key] = []
             for example in dataset:
-                all_questions.append((dataset_key, example))
+                all_questions[dataset_key].append((dataset_key, example))
                 example_id = example[DATASET_ID_KEYS[dataset_key][0]]
-                ids.append((dataset_key, example_id))
+                ids[dataset_key].append((dataset_key, example_id))
         
         # batch the questions
-        batched_questions : List[Tuple[List[MT_ID_TYPE], List[MT_EXAMPLE_TYPE]]] = []
+        batched_questions  = []
+        
+        # the largest number divisible by both 6 and 8 that is less than 277, the number of examples in RTE
+        truncation = 240
+        
+        randomized_indices : Dict[DatasetType, List[Tuple[DatasetType, int]]] = {}
+        for dataset_key, dataset in self.questions.items():
+            indices : List[Tuple[DatasetType, int]] = [(dataset_key, i) for i in range(len(dataset))]
+            random.shuffle(indices)
+            randomized_indices[dataset_key] = indices[:truncation]
 
-        randomized_indices = list(range(len(all_questions)))
-        random.shuffle(randomized_indices)
+        # by cycling one from each dataset at a time, we ensure that the batches are balanced 
+        # (i.e. have at least one from each dataset)
+        one_from_each = list(zip(*randomized_indices.values()))
+        all_indices = list(itertools.chain(*one_from_each))
 
-        for i in range(0, len(all_questions), self.config.batch_size):
-            batched_questions.append((
-                [ids[j] for j in randomized_indices[i:i+self.config.batch_size]],
-                [all_questions[j] for j in randomized_indices[i:i+self.config.batch_size]]  
-            ))
-                
-        return batched_questions[:12]
+        # will contain batches of (dataset, index) tuples
+        batched_indices : List[List[Tuple[DatasetType, int]]] = []
+        for i in range(0, len(all_indices), self.config.batch_size):
+            batch = all_indices[i:i+self.config.batch_size]
+            random.shuffle(batch)
+            batched_indices.append(batch)
+        
+        # now we have a list of batches of (dataset, index) tuples
+        batched_ids : List[List[MT_ID_TYPE]] = []
+        batched_examples : List[List[MT_EXAMPLE_TYPE]] = []
+        for batch in batched_indices:
+            batched_ids.append([ids[ds][i] for (ds, i) in batch])
+            batched_examples.append([all_questions[ds][i] for (ds, i) in batch])
+        
+        batched_questions : List[
+            Tuple[List[MT_ID_TYPE],
+            List[MT_EXAMPLE_TYPE]]
+        ] = list(zip(batched_ids, batched_examples))
+
+        return batched_questions
     
     # gives a dict from (dataset_type, question_id) to the datapoint dict (which has the answers)
     def answers_from_batched_questions(
@@ -560,7 +586,7 @@ DATASET_QUESTIONS_CONFIGS = {
     DatasetType.MNLI : DatasetConfig(
         dataset=DatasetType.MNLI,
         hf_dataset_path=['glue', 'mnli'],
-        split_name='validation',
+        split_name='validation_matched',
     ),
 }
 
