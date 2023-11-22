@@ -642,6 +642,12 @@ QUESTION_FORMAT_FUNCTIONS = {
 }
 
 IO_INSTRUCTIONS = """\
+#### Instructions:
+
+1. **Intermediate Reasoning**: Include all the steps you took to evaluate the relationship between the Premise and Hypothesis. This could include identifying key phrases, contradictions, or logical connections.
+2. **Batch Size**: You must provide an answer for each question in the batch, ensuring that the number of answers you provide exactly matches the specified 4.
+3. **Handling Ambiguities**: Answer every question even if you are unsure about the answer.
+
 #### Input Format:
 - Questions will be presented in a batch. Each question will be prefixed with its index, starting from 0, like so:
 Q[0]: {{Question_0_Text}}
