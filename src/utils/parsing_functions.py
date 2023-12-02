@@ -48,7 +48,7 @@ def gsm8k_CoT_hard_question_format(example, i):
     return gsm8k_CoT_question_format(example, i)
 
 def gsm8k_CoT_hard_answer_format(example, i):
-    return gsm8k_CoT_answer_format(example, i)
+    raise NotImplementedError()
 
 
 def mbpp_question_format(example, i):
