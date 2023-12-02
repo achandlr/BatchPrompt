@@ -50,7 +50,6 @@ class ModelAPIType(Enum):
 
 # DICTS
 DATASET_ID_KEYS = {
-    # TODO: Verify what these do and fi they are correct
     DatasetType.GSM8K_HARD_CoT : ['idx'],
     DatasetType.GSM8K_HARD : ['idx'],
     DatasetType.COMMON_SENSE : ['idx'],
@@ -62,7 +61,6 @@ DATASET_ID_KEYS = {
 }
 
 DATASET_INPUT_KEYS = {
-    # TODO: Verify
     DatasetType.GSM8K_HARD_CoT : ['question'],
     DatasetType.GSM8K_HARD : ['input'],
     DatasetType.COMMON_SENSE : ['question','choices'],
@@ -86,7 +84,6 @@ DATASET_EXAMPLE_KEYS = {
 }
 
 DATASET_LABEL_KEYS = {
-    # TODO: Verify
     DatasetType.GSM8K_HARD_CoT : ['answer'],
     DatasetType.GSM8K_HARD : ['target'],
     DatasetType.COMMON_SENSE : ['answerKey'],
@@ -313,7 +310,6 @@ class BatchPromptExperiment:
 
     def execute(self) -> Tuple[List[Tuple[List[ID_TYPE], str]], Dict[ID_TYPE, Dict[str, Any]]]:
         """
-        TODO:
         X Load Dataset
         X Generate set of model inputs (using dataset + config + FlexiblePromptTemplate)
         X query model for each input (save raw outputs to a file somewhere)
@@ -330,9 +326,6 @@ class BatchPromptExperiment:
         # for debug purposes
         if self.debug:
             batched_model_inputs = batched_model_inputs[:3]
-        # TODO: igure out how to also save the config
-        # which includes a lambda/function that might be tricky to pickle
-        # query model
         batched_model_outputs = self.batch_query_model(batched_model_inputs)
         if batched_model_inputs:
             if self.debug.save_batched_model_inputs:
@@ -424,8 +417,6 @@ class BatchPromptTemplate:
                 self.example_selector = selector_class.from_examples(
                     # Need to turn hf dataset into a list of dicts
                     examples=selection_examples,
-                    # TODO: do we want embeddings to be configurable? probably not... it has sensible defaults
-                    # and it is certainly not a menaingful variable in our experiments
                     embeddings=HuggingFaceEmbeddings(),
                     vectorstore_cls=Chroma,
                     k=self.num_examples,
@@ -468,8 +459,6 @@ class BatchPromptTemplate:
                 assert self.num_examples == len(batch_examples)
                 return batch_examples
 
-    # TODO: How to distinguish between baseline and batch size of 1 (baseline shouldn't have [i] in the prompt)
-    # Resolved - ignore i in format function if baseline
     def generate_prompt(self, batch: List[Dict[str, Any]]) -> str:
         example_questions = []
         example_answers = []
@@ -483,15 +472,6 @@ class BatchPromptTemplate:
         
         for i, question in enumerate(batch):
             questions.append(self.example_question_format(question, i))
-        
-        '''TODO Rohan:  add an extra sentence so that the LLM knows the following are examplesdefault_shot_types = {
-        "Zero-Shot": "",
-        "Few-Shot": "Consider the following examples and maintain their formatting.\n",
-        "One-Shot": "Consider the following example and maintain its formatting."
-        TODO Rohan:  add an extra sentence so that the LLM knows the answers to the example questions are answers to the example questions ex: Response to examples in Batch for Few-Shot
-        # TODO: Rohan add an extra sentence so that the LLM knows the following are the actual questions to answer: #Questions in Batch to answer
-        ''' 
-        
 
         if self.prompt_format is not None:
             fields = {

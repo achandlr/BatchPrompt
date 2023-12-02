@@ -5,9 +5,11 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 from sklearn.metrics import accuracy_score, f1_score, confusion_matrix
+import pandas as pd
+import random
 
 def save_plot(description):
-    description = description.replace("(", "_").replace(")", "_").replace(":", "_").replace(" ", "_")
+    description = description.replace("(", "_").replace(")", "_").replace(":", "_").replace(" ", "_").replace(".","_").replace("\n","_")
 
     # Create directories if they don't exist
     if not os.path.exists(os.path.join("data", "visualizations")):
@@ -69,8 +71,7 @@ def plot_batch_results(batch_sizes, accuracies, parsing_error_rates, title="Batc
     # Save plot
     save_plot(title+".png")
     return
-import pandas as pd
-import random
+
 def build_dataframe(task_to_stats):
     """
     Constructs a DataFrame from the task_to_stats dictionary, handling nested accuracy values.
@@ -155,111 +156,276 @@ def build_dataframe(task_to_stats):
 #     plt.show()
 #     return
 
-def plot_2_vars(df, x_var="Batch Size", y_var="Accuracy - Wrong", control_variables = {"K-shot Size": 1, "Model Name" : "LLAMA-2-70B"}):
+
+def plot_2_vars(df, x_var="Batch Size", y_var="Accuracy - Wrong", control_variables={"K-shot Size": 1, "Model Name": "LLAMA-2-70B"}, y_range=(0, 1), show= False):
+    plt.clf()
+ 
     # Update this list based on available models
     assert "Model Name" in control_variables.keys()
+    # assert control_variables["Model Name"] in ['gpt-3.5-turbo-16k', 'LLAMA-2-70B']
 
-    assert control_variables["Model Name"] in ['gpt-3.5-turbo-16k', 'LLAMA-2-70B']
     # Filtering the DataFrame
     filtered_df = df
     for key, value in control_variables.items():
         filtered_df = filtered_df[filtered_df[key] == value]
-
 
     # Creating the plot
     plt.figure(figsize=(10, 6))
     sns.lineplot(data=filtered_df, x=x_var, y=y_var, hue='Task Name', marker='o')
 
     # Dynamic title based on y-variable (accuracy or error rate)
-    if "Accuracy" in y_var:
-        plot_aspect = 'Accuracy'
-        ylabel = 'Accuracy (%)'
-    else:
-        plot_aspect = 'Error Rate'
-        ylabel = 'Error Rate (%)'
+    plot_aspect = 'Accuracy' if "Accuracy" in y_var else 'Answer Parsing Error Rate'
+    ylabel = plot_aspect
 
-    title = f'{plot_aspect} over {x_var}'
-
+    if control_variables["Model Name"] == "gpt-3.5-turbo-16k":
+        model_name = "GPT-3.5 Turbo (16k)"
+    elif control_variables["Model Name"] == "LLAMA-2-70B":
+        model_name = "LLAMA-2 (70B)"
+    elif control_variables["Model Name"] == "LLAMA-2-13B":
+        model_name = "LLAMA-2 (13B)"
+    title = f'{model_name} {plot_aspect} over {x_var}'
     for key, value in control_variables.items():
+        if key == "Model Name":
+            continue
         title += f" with {key} = {value}"
-    
-    
-    ''' 
-        # if "K-shot Size" in control_variables.keys():
-        # k_shot = control_variables["K-shot Size"] #TODO: fix this
-        # # plt.title(f'{plot_aspect} over {x_var} for {control_variables["Model Name"]} ({k_shot}-Shot)')
-        # else:
-        #     plt.title(f'{plot_aspect} over {x_var} for {control_variables["Model Name"]}')
 
-    ''' 
-    
     plt.title(title)
     plt.xlabel(x_var)
     plt.ylabel(ylabel)
 
-    # Setting y-axis limits
-    plt.ylim(0, 1)
+    # Setting y-axis limits using the provided y_range
+    plt.ylim(y_range)
 
     if "K-shot Size" in control_variables.keys():
         k_shot = control_variables["K-shot Size"]
-        # Enhancing the legend
         plt.legend(title=f'Tasks ({k_shot}-Shot)')
 
-    # Grid for better readability
     plt.grid(True)
+    if show:
+        plt.show()
+    save_plot(title)
+    plt.close()
 
-    # Display the plot
-    plt.show()
+def get_task_name_to_size_accuracy(data, desired_accuracy = "none_is_wrong"):
+    plot_data = {}
 
+    # Iterate through each batched task combination
+    for tasks, task_data in data.items():
+        num_batched_tasks = len(tasks)  # Number of tasks batched together
+
+        # Iterate through each task in the batch
+        for task_name, metrics in task_data.items():
+
+            
+            if metrics and desired_accuracy in metrics:  # Check if accuracy data is available
+
+                accuracy = metrics[desired_accuracy]['Accuracy']
+
+                if task_name not in plot_data:
+                    plot_data[task_name] = {}
+
+                if num_batched_tasks not in plot_data[task_name]:
+
+                    plot_data[task_name][num_batched_tasks] = [] 
+
+                plot_data[task_name][num_batched_tasks].append(accuracy)
+            else:
+                pass
+
+    task_name_to_size_accuracy = {}
+
+    for task_name, task_data in plot_data.items():
+        task_name_to_size_accuracy[task_name] = {}
+
+        for task_size, accuracies in task_data.items():
+            if accuracies:  # Ensure there are accuracies to average
+                average_accuracy = sum(accuracies) / len(accuracies)
+                task_name_to_size_accuracy[task_name][task_size] = average_accuracy
+    return task_name_to_size_accuracy
+
+
+def get_task_name_to_cannot_parse_proportion(data):
+    plot_data = {}
+
+    # Iterate through each batched task combination
+    for tasks, task_data in data.items():
+        num_batched_tasks = len(tasks)  # Number of tasks batched together
+
+        # Iterate through each task in the batch
+        for task_name, metrics in task_data.items():
+            if 'cannot_parse_proportion' in metrics:  # Check if accuracy data is available
+                cannot_parse_proportion = metrics['cannot_parse_proportion']
+
+                if task_name not in plot_data:
+                    plot_data[task_name] = {}
+
+                if num_batched_tasks not in plot_data[task_name]:
+
+                    plot_data[task_name][num_batched_tasks] = [] 
+
+                plot_data[task_name][num_batched_tasks].append(cannot_parse_proportion)
+            else:
+                pass
+
+    task_name_to_cannot_parse_proportion = {}
+
+    for task_name, task_data in plot_data.items():
+        task_name_to_cannot_parse_proportion[task_name] = {}
+
+        for task_size, cannot_parse_data in task_data.items():
+            if cannot_parse_data:  # Ensure there are accuracies to average
+                average_accuracy = sum(cannot_parse_data) / len(cannot_parse_data)
+                task_name_to_cannot_parse_proportion[task_name][task_size] = average_accuracy
+    return task_name_to_cannot_parse_proportion
+
+def plot_task_accuracies(data, title='Task Accuracies', xlabel='Number of Tasks', ylabel='Average Accuracy', legend_title='Tasks'):
+    # Create a figure and an axis for the plot
+    fig, ax = plt.subplots()
+
+    max_tasks = max(max(accuracies.keys()) for accuracies in data.values())
+
+    # Iterate over each task and plot their accuracies
+    for task_name, accuracies in data.items():
+        x_values = list(accuracies.keys())
+        
+        y_values = list(accuracies.values())
+        ax.plot(x_values, y_values, label=task_name, marker='o')  # Plot with markers at each point
+
+    # Set the title and labels
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    # Add a legend
+    ax.legend(title=legend_title)
+    ax.set_xticks(range(1, max_tasks + 1))
+    plt.ylim((0,1))
+
+    # Show the plot
+    # plt.show()
+    save_plot(title)
+    plt.close()
+    return
+
+def plot_task_parse_error(data, title="Impact of Question Variety in Batched Prompts \non Answer Parsing Error Rates", xlabel='Number of Unique Tasks in Batched Prompt', ylabel='Answer Parsing Error Rate', legend_title='Tasks', y_range = (0,.2)):
+    # Create a figure and an axis for the plot
+    fig, ax = plt.subplots()
+
+    max_tasks = max(max(accuracies.keys()) for accuracies in data.values())
+
+    # Iterate over each task and plot their accuracies
+    for task_name, accuracies in data.items():
+        x_values = list(accuracies.keys())
+        y_values = list(accuracies.values())
+        ax.plot(x_values, y_values, label=task_name, marker='o')  # Plot with markers at each point
+
+    # Set the title and labels
+    ax.set_title(title)
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+
+    # Add a legend
+    ax.legend(title=legend_title)
+    ax.set_xticks(range(1, max_tasks + 1))
+    plt.ylim(y_range)
+
+
+    # Show the plot
+    # plt.show()
+    save_plot(title)
+    plt.close()
+    return
 if __name__ == "__main__":
+
+
+
+
     with open("task_to_stats_rte_gsm8k_mnli_commonsense_all_models", "rb") as input_file:
         task_to_stats = pickle.load(input_file)
 
     df = build_dataframe(task_to_stats)
+    df.drop('Accuracy - Skipped', axis=1, inplace=True)
+    df.drop('Accuracy - Random', axis=1, inplace=True)
+    df.to_csv("Stage 1 Results all three models.csv")
+
+    # Stage 1 Plotting
     # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
     # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
-    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Random", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
-    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Random", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-13B"}, show = False)
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-13B"}, show = False)
     # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-13B"}, show = False)
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-13B"}, show = False)
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 6  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 6  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 6  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"}, y_range=(0, 0.3))
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 6  , "Model Name" : "gpt-3.5-turbo-16k"}, y_range=(0, 0.3))
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "K-shot Size", y_var = "Cannot Parse Proportion", control_variables = {"Batch Size" : 4  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "K-shot Size", y_var = "Cannot Parse Proportion", control_variables = {"Batch Size" : 4  , "Model Name" : "LLAMA-2-70B"})
+
+
+    # These plots treat answers that cannot be parsed differently
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Random", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Random", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Random", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
     # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Wrong", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
     # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Skipped", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
     # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Skipped", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
-
-    plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "gpt-3.5-turbo-16k"})
-    plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
-
-    plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
-    plot_2_vars(df, x_var = "Batch Size", y_var = "Cannot Parse Proportion", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Skipped", control_variables = {"K-shot Size" : 0  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Skipped", control_variables = {"K-shot Size" : 6  , "Model Name" : "gpt-3.5-turbo-16k"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Skipped", control_variables = {"K-shot Size" : 0  , "Model Name" : "LLAMA-2-70B"})
+    # plot_2_vars(df, x_var = "Batch Size", y_var = "Accuracy - Skipped", control_variables = {"K-shot Size" : 1  , "Model Name" : "LLAMA-2-70B"})
 
 
-    plot_2_vars(df, x_var = "K-shot Size", y_var = "Cannot Parse Proportion", control_variables = {"Batch Size" : 4  , "Model Name" : "gpt-3.5-turbo-16k"})
-    # plot_2_vars(df, x_var = "K-shot Size", y_var = "Cannot Parse Proportion", control_variables = {"Batch Size" : 4  , "Model Name" : "LLAMA-2-70B"})
 
-    print("DONE")
-    # plot_1  = extract_and_plot_stats(task_to_stats, control_vars = [], plot_var, plot_title='', x_label='', y_label='')
+    # # Stage 2: Plotting Line Plot for the data
+    from datasets import load_dataset, Dataset
+    from typing import Callable, List, Dict, Any, Tuple, Union, Optional, TypedDict
+    from enum import Enum, auto
+    from tqdm import tqdm
+    from pathlib import Path
+    class DatasetType(Enum):
+        GSM8K_HARD = auto()
+        GSM8K_HARD_CoT = auto()
+        COMMON_SENSE = "COMMON_SENSE"
+        COMMON_SENSE_CoT = auto()
+        GSM8K = "GSM8K"
+        MBPP = "MBPP"
+        RTE = "RTE"
+        MNLI = "MNLI"
+    model_to_dataset_path = {"GPT-3.5 Turbo (16K)" : 'dataset_combination_to_stats', "LLAMA-2 (70B)" : 'dataset_combination_to_stats_llama', "LLAMA-2 (13B)" : 'dataset_combination_to_stats_llama_13B'}
+    model_name_to_data = {}
 
-    # with open(r"task_to_stats_rte_incomplete_50", "rb") as input_file:
-    #     stats_to_task = pickle.load(input_file)
+    for model_name, pickle_file_path in model_to_dataset_path.items():
 
-    # rte_stats = stats_to_task["rte"]
-    # # rte_batched_model_sizes = rte_stats.keys()
-    # # rte_accuracies = [rte_stats[batch_size]["stat"]['Accuracy'] for batch_size in rte_batched_model_sizes]
-    # # rte_proportion_cant_parse = [rte_stats[batch_size]["stat"]['proportion_cant_parse'] for batch_size in rte_batched_model_sizes]
-    # # rte_sample_size = 50
+        # Load the data from the pickle file
+        with open(pickle_file_path, 'rb') as file:
+            data = pickle.load(file)
+        task_name_to_size_accuracy = get_task_name_to_size_accuracy(data, desired_accuracy = "none_is_wrong")
+        plot_task_accuracies(task_name_to_size_accuracy, title=f'{model_name} Accuracy\nby Number of Unique Task Types in Batched Prompts', xlabel='Number of Unique Task Types in Batched Prompts', ylabel='Average Accuracy Across Experiments', legend_title='Tasks')
 
-    # rte_batched_model_sizes = [1,2,4,8]
-    # rte_accuracies = [.8,.78,.82,.8]
-    # rte_proportion_cant_parse = [0,0,0,0]#[rte_stats[batch_size]["stat"]['proportion_cant_parse'] for batch_size in rte_batched_model_sizes]
-    # rte_sample_size = 50
+        task_name_to_cannot_parse_proportion = get_task_name_to_cannot_parse_proportion(data)
 
-    # with open(r"task_to_stats_rte_gsm8k", "rb") as input_file:
-    #         stats_to_task_gsm8k  = pickle.load(input_file)
-    # gsm8k_stats = stats_to_task_gsm8k["GSM8K"]
-    # gsm8k_batched_model_sizes = gsm8k_stats.keys()
-    # gsm8k_accuracies = [gsm8k_stats[batch_size]["stat"]['Accuracy'] for batch_size in rte_batched_model_sizes]
-    # gsm8k_proportion_cant_parse = [gsm8k_stats[batch_size]["stat"]['proportion_cant_parse'] for batch_size in rte_batched_model_sizes]
-    # gsm8k_sample_size = 50
+        plot_task_parse_error(task_name_to_cannot_parse_proportion, title=f"{model_name} Impact of Question Variety in Batched Prompts \non Answer Parsing Error Rates", legend_title='Tasks')
 
-    # plot_batch_results(batch_sizes = rte_batched_model_sizes, accuracies = rte_accuracies, parsing_error_rates = rte_proportion_cant_parse, title="RTE Zero-Shot BatchPrompt Results", sample_size = rte_sample_size)
+        if model_name not in model_name_to_data:
+             model_name_to_data[model_name] = {"task_name_to_size_accuracy" : {}, "task_name_to_cannot_parse_proportion" : {}}
+        model_name_to_data[model_name]["task_name_to_size_accuracy"] = task_name_to_size_accuracy
+        model_name_to_data[model_name]["task_name_to_cannot_parse_proportion"] = task_name_to_cannot_parse_proportion
+        continue
 
-    # plot_batch_results(batch_sizes = gsm8k_batched_model_sizes, accuracies = gsm8k_accuracies, parsing_error_rates = gsm8k_proportion_cant_parse, title="GSM8K Zero-Shot BatchPrompt Results", sample_size = gsm8k_sample_size)
+    pickle.dump((model_name_to_data), open("stage_2_model_name_to_multi_task_stats", 'wb')) 

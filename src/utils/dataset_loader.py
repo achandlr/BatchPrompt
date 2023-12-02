@@ -1,3 +1,4 @@
+# Note: This is old code that is no longer used.
 
 from datasets import load_dataset
 import pickle
@@ -109,7 +110,7 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
             return questions, extracted_values
     elif dataset_name =="gsm_hard":
         if example_type == "CoT":
-            # TODO: For now using gsm8k CoT examples because gsm-hard rather gives us code to solve but not step by step answers for code (ex: eggs_sold = eggs_per_day - eggs_eaten - eggs_baked instead of eggs_sold = 100 - 10 - 5)
+            # Note: For now using gsm8k CoT examples because gsm-hard rather gives us code to solve but not step by step answers for code (ex: eggs_sold = eggs_per_day - eggs_eaten - eggs_baked instead of eggs_sold = 100 - 10 - 5)
             assert needed_extra_dataset != None
             allowed_indices = get_allowed_indices(disallowed_data_indices, len(needed_extra_dataset[data_location]))
             questions_np = np.array(needed_extra_dataset[data_location]['question'])
@@ -225,7 +226,7 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
             # example_questions = [dataset[data_location][i]['text'] for i in allowed_indices]
             # example_answers = [dataset[data_location][i]['code'] for i in allowed_indices]
             return questions_with_function_names, answers
-    # TODO: implement
+    # Note: implement
     elif dataset_name == "rte":
         
         if example_type == "CoT":
@@ -283,16 +284,16 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
                     
                     except Exception as e:
                         print(f"An error occurred: {e}")
-                        # TODO: might want to keep track of indices so could remove later so not mismatch between labels
+                        # Note: might want to keep track of indices so could remove later so not mismatch between labels
                         continue
                 return contexts, hypothesises
-            # TODO: Might want to change how we format. But would want to keep consistent with non CoT examples
+            # Note: Might want to change how we format. But would want to keep consistent with non CoT examples
             contexts, hypothesises = extract_contexts_hypothesises(rte_wit_CoT_source_desired_format)
-            # TODO: Might want to specify what is hypothesis and what is context
+            # Note: Might want to specify what is hypothesis and what is context
             def combine_rte_sentences(sentence_1, sentence_2):
                 return f"Sentence 1:\n{sentence_1}\n\nSentence 2:\n{sentence_2}"
             combined_sentences = [combine_rte_sentences(sentence_1, sentence_2) for sentence_1, sentence_2 in zip(contexts, hypothesises)]
-            # TODO: Write function that does this
+            # Note: Write function that does this
             def combine_rationale_and_answer(rationales_np_desired_format, rte_wit_CoT_labels_desired_format):
                 strings = []
                 for rationale_np_desired_format, rte_wit_CoT_label_desired_format in zip(rationales_np_desired_format, rte_wit_CoT_labels_desired_format):
@@ -310,12 +311,12 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
             sentence_1 = sentence_1_np[list(allowed_indices)]
             sentence_2 = sentence_2_np[list(allowed_indices)]
             labels = labels_np[list(allowed_indices)]   
-            # TODO: Might want to specify what is hypothesis and what is context
+            # Note: Might want to specify what is hypothesis and what is context
             def combine_rte_sentences(sentence_1, sentence_2):
                 return f"Sentence 1:\n{sentence_1}\n\nSentence 2:\n{sentence_2}"
             combined_sentences = [combine_rte_sentences(sentence_1, sentence_2) for sentence_1, sentence_2 in zip(sentence_1, sentence_2)]
             labels_as_yes_no = ["yes" if label == 1 else "no" for label in labels]
-            # TODO: Might want to convert labels to string (yes/no)
+            # Note: Might want to convert labels to string (yes/no)
             return combined_sentences, labels_as_yes_no
     elif dataset_name == "mnli":
         if example_type == "CoT":
@@ -333,7 +334,7 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
                 CoT_example = f"Step by Step Thinking:\n{rationale_cleaned}\n\nFinal Answer:\n{labels}"
                 return CoT_example
             CoT_answers = [build_CoT_answer(rationale, answer) for rationale, answer in zip(rationales, labels_as_string)]
-            # TODO: decide if want to return string representation or int representation
+            # Note: decide if want to return string representation or int representation
             return questions, CoT_answers
         else:
             allowed_indices = get_allowed_indices(disallowed_data_indices, len(dataset[data_location]))
@@ -351,7 +352,7 @@ def get_few_shot_examples(dataset, dataset_name, example_type = "End-to-end", di
             premise_with_hypothesis_list = [build_mnli_question(premise, hypothesis) for premise, hypothesis in zip(premises, hypothesises)]
             # labels are entailment (0), neutral (1), contradiction (2)
             labels_as_string = ["entailment" if label == 0 else "neutral" if label == 1 else "contradiction" for label in labels]
-            # TODO: decide if want to return string representation or int representation
+            # Note: decide if want to return string representation or int representation
             return premise_with_hypothesis_list, labels_as_string
     else:
         raise ValueError("Invalid dataset name")
@@ -384,9 +385,9 @@ if LOAD_PICKLE:
     mbpp = load_pickle("data//imported//datasets//pickled//mbpp")
     rte = load_pickle("data//imported//datasets//pickled//rte")
     mnli = load_pickle("data//imported//datasets//pickled//mnli")
-    # TODO: Comment out
+    # Note: Comment out
     # CoT_examples = load_pickle("data//imported//datasets//pickled//CoT-Collection")
-    # TODO: Delete these two lines after run once
+    # Note: Delete these two lines after run once
     # CoT_examples_desired_tasks_only = filter_dataset_by_task(CoT_examples, acceptable_tasks={"commonsenseqa", "mnli", "rte"})
     # pickle_dataset(CoT_examples_desired_tasks_only, "CoT-Collection-desired-tasks-only")
     CoT_examples_desired_tasks_only = load_pickle("data//imported//datasets//pickled//CoT-Collection-desired-tasks-only")
@@ -449,9 +450,9 @@ if __name__ == "__main__":
     stats = []
     DEBUG = True
     set_api_key(r"data/imported/api_token.txt")
-    # TODO: Note that this is a dummy script and doesn't remove invalid indices
+    # Note: Note that this is a dummy script and doesn't remove invalid indices
     # for i, dataset in enumerate([gsm8k_examples, gsm_hard_examples, commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
-    # TODO: reset to looping through all
+    # Note: reset to looping through all
     for i, dataset in enumerate([commonsense_qa_examples, mbpp_examples, rte_examples, mnli_examples]):
 
         if DEBUG:
@@ -479,7 +480,6 @@ if __name__ == "__main__":
             while attempt_cnt <10:
                 try:
                     batched_output = query_model("gpt-3.5-turbo", batched_prompt)
-                    # TODO: bad code
                     if i ==2:
                         batched_output_parsed = extract_answers_batch(batched_output, answer_type="commonsense")
                     else:
